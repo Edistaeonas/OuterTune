@@ -46,6 +46,7 @@ class TagLibScanner : MetadataScanner {
             val songId = SongEntity.generateSongId()
             var rawTitle: String? = null
             var albumName: String? = null
+            var albumArtist: String? = null
             var trackNumber: Int? = null
             var discNumber: Int? = null
             var year: Int? = null
@@ -55,6 +56,8 @@ class TagLibScanner : MetadataScanner {
             var sampleRate: Int
             var channels: Int
             var rawDuration: Int
+            var commentTag: String? = null
+            var composer: String? = null
             var replayGain: Double? = null
 
             var extraData: String = "" // extra data field
@@ -99,6 +102,7 @@ class TagLibScanner : MetadataScanner {
                         }
 
                         "ALBUM", "album" -> albumName = it
+                        "ALBUMARTIST", "ALBUM ARTIST" -> albumArtist = it
                         "TITLE", "title" -> rawTitle = it
                         "GENRE", "genre" -> {
                             val splitGenres = it.split(ARTIST_SEPARATORS)
@@ -147,6 +151,8 @@ class TagLibScanner : MetadataScanner {
                                 }
                             }
                         }
+                        "COMMENT", "comment" -> commentTag = it
+                        "COMPOSER", "composer" -> composer = it
                         else -> {
                             extraData += "$key: $it\n"
                         }
@@ -193,8 +199,8 @@ class TagLibScanner : MetadataScanner {
 
 
             // deduplicate
-            artistList = artistList.filterNot { it.name == "" }.distinctBy { it.name.lowercase() } as ArrayList<ArtistEntity>
-            genresList = genresList.filterNot { it.title == "" }.distinctBy { it.title.lowercase() } as ArrayList<GenreEntity>
+            artistList = artistList.filterNot { it.name == "" }.distinctBy { it.name } as ArrayList<ArtistEntity>
+            genresList = genresList.filterNot { it.title == "" }.distinctBy { it.title } as ArrayList<GenreEntity>
 
             return SongTempData(
                 Song(
@@ -207,12 +213,15 @@ class TagLibScanner : MetadataScanner {
                         discNumber = discNumber,
                         albumId = albumId,
                         albumName = albumName,
+                        albumArtist = albumArtist,
                         year = year,
                         date = date,
                         dateModified = dateModified,
                         isLocal = true,
                         inLibrary = timeNow,
-                        localPath = file.absolutePath
+                        localPath = file.absolutePath,
+                        commentTag = commentTag,
+                        composer = composer
                     ),
                     artists = artistList,
                     // album not working

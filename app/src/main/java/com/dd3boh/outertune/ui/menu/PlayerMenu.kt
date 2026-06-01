@@ -4,6 +4,7 @@ import android.content.Intent
 import android.media.audiofx.AudioEffect
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.launch
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -96,12 +97,16 @@ import com.dd3boh.outertune.ui.component.button.IconButton
 import com.dd3boh.outertune.ui.dialog.AddToPlaylistDialog
 import com.dd3boh.outertune.ui.dialog.AddToQueueDialog
 import com.dd3boh.outertune.ui.dialog.ArtistDialog
+import com.dd3boh.outertune.ui.dialog.DefaultDialog
 import com.dd3boh.outertune.ui.dialog.DetailsDialog
 import com.dd3boh.outertune.utils.rememberPreference
+import com.dd3boh.outertune.utils.syncCoroutine
 import com.zionhuang.innertube.YouTube
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.time.LocalDateTime
@@ -133,12 +138,10 @@ fun PlayerMenu(
 
     val playerConnection = LocalPlayerConnection.current ?: return
     val playerVolume = playerConnection.service.playerVolume.collectAsState()
-    val queueBoard by playerConnection.queueBoard.collectAsState()
     val currentFormatState = database.format(mediaMetadata.id).collectAsState(initial = null)
     val currentFormat = currentFormatState.value
     val librarySong by database.song(mediaMetadata.id).collectAsState(initial = null)
-    val coroutineScope = rememberCoroutineScope()
-
+    val coroutineScope = CoroutineScope(syncCoroutine)
     val download by LocalDownloadUtil.current.getDownload(mediaMetadata.id).collectAsState(initial = null)
 
     val activityResultLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
@@ -157,6 +160,9 @@ fun PlayerMenu(
     var showPitchTempoDialog by rememberSaveable {
         mutableStateOf(false)
     }
+
+    var showRemoveDownloadDialog by remember {
+        mutableStateOf(false) }
 
     if (showPitchTempoDialog) {
         PitchTempoDialog(
@@ -311,6 +317,7 @@ fun PlayerMenu(
                                 }
                             ),
                             modifier = Modifier
+                                .weight(weight = 1f, fill = false)
                                 .focusRequester(focusRequester)
                         )
                     }
@@ -444,15 +451,22 @@ fun PlayerMenu(
                     database.transaction {
                         insert(mediaMetadata)
                     }
-                    downloadUtil.download(mediaMetadata)
+                    downloadUtil.downloadSingle(mediaMetadata)
                 },
                 onRemoveDownload = {
-                    DownloadService.sendRemoveDownload(
-                        context,
-                        ExoDownloadService::class.java,
-                        mediaMetadata.id,
-                        false
-                    )
+                    showRemoveDownloadDialog = true
+//                    // 1. Command the service to delete the physical bytes
+//                    DownloadService.sendRemoveDownload(
+//                        context,
+//                        ExoDownloadService::class.java,
+//                        mediaMetadata.id,
+//                        false
+//                    )
+//                    // 2. IMMEDIATE UI REFRESH: Clear the database timestamp now
+//                    // Using the coroutine scope available in the Composable
+//                    coroutineScope.launch(Dispatchers.IO) {
+//                        database.updateDownloadStatus(mediaMetadata.id, null)
+//                    }
                 }
             )
         if (librarySong?.song?.inLibrary != null && !librarySong!!.song.isLocal) {
@@ -562,14 +576,14 @@ fun PlayerMenu(
     if (showChooseQueueDialog) {
         AddToQueueDialog(
             onAdd = { queueName ->
-                val q = queueBoard.addQueue(
+                val q = playerConnection.service.queueBoard.addQueue(
                     queueName,
                     listOf(mediaMetadata),
                     forceInsert = true,
                     delta = false
                 )
                 q?.let {
-                    queueBoard.setCurrQueue(it)
+                    playerConnection.service.queueBoard.setCurrQueue(it)
                 }
             },
             onDismiss = {
@@ -608,6 +622,38 @@ fun PlayerMenu(
             }
         )
     }
+
+    if (showRemoveDownloadDialog) {
+        DefaultDialog(
+            onDismiss = { showRemoveDownloadDialog = false },
+            content = {
+                Text(
+                    text = stringResource(R.string.remove_download_song_confirm, mediaMetadata.title),
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(horizontal = 18.dp)
+                )
+            },
+            buttons = {
+                TextButton(onClick = { showRemoveDownloadDialog = false }) {
+                    Text(text = stringResource(android.R.string.cancel)) }
+                TextButton(
+                    onClick = {
+                        showRemoveDownloadDialog = false
+                        // 1. Physical Delete
+                        DownloadService.sendRemoveDownload(context, ExoDownloadService::class.java, mediaMetadata.id, false)
+                        // 2. Instant DB update for UI Flow
+                        coroutineScope.launch(Dispatchers.IO) {
+                            database.updateDownloadStatus(mediaMetadata.id, null)
+                        }
+                        onDismiss()
+                    }
+                ) {
+                    Text(text = stringResource(android.R.string.ok))
+                }
+            }
+        )
+    }
+
 
 }
 

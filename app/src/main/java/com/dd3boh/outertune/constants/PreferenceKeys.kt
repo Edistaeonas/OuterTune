@@ -16,6 +16,7 @@ val DarkModeKey = stringPreferencesKey("darkMode")
 val PureBlackKey = booleanPreferencesKey("pureBlack")
 val ShowLikedAndDownloadedPlaylist = booleanPreferencesKey("showLikedAndDownloadedPlaylist")
 val SwipeToQueueKey = booleanPreferencesKey("swipeToQueue")
+val SwipeToRemoveKey = booleanPreferencesKey("swipeToRemove")
 val FlatSubfoldersKey = booleanPreferencesKey("flatSubfolders")
 val TabletUiKey = booleanPreferencesKey("tabletUi")
 
@@ -38,6 +39,8 @@ val ContentCountryKey = stringPreferencesKey("contentCountry")
 val ProxyEnabledKey = booleanPreferencesKey("proxyEnabled")
 val ProxyUrlKey = stringPreferencesKey("proxyUrl")
 val ProxyTypeKey = stringPreferencesKey("proxyType")
+
+val VrVerKey = stringPreferencesKey("vr_version_override")
 
 // sync time tracks
 val LastFullSyncKey = longPreferencesKey("lastFullSync")
@@ -68,6 +71,14 @@ val AutoLoadMoreKey = booleanPreferencesKey("autoLoadMore")
 val KeepAliveKey = booleanPreferencesKey("keepAlive")
 val StopMusicOnTaskClearKey = booleanPreferencesKey("stopMusicOnTaskClear")
 
+val GlobalRadioArtistsCountKey = intPreferencesKey("globalRadioArtistsCount")
+val GlobalRadioSongsCountKey = intPreferencesKey("globalRadioSongsCount")
+val GlobalRadioLocalAndLikedSongsCountKey = intPreferencesKey("globalRadioLocalAndLikedSongsCount")
+val GlobalRadioUseOnlineKey = booleanPreferencesKey("globalRadioUseOnline")
+val GlobalRadioUseLocalKey = booleanPreferencesKey("globalRadioUseLocal")
+val GlobalRadioStrictFavoritesKey = booleanPreferencesKey("globalRadioStrictFavorites")
+val GlobalRadioArtistRepeatThresholdKey = intPreferencesKey("globalRadioArtistRepeatThreshold")
+
 val PlayerVolumeKey = floatPreferencesKey("playerVolume")
 val RepeatModeKey = intPreferencesKey("repeatMode")
 val LockQueueKey = booleanPreferencesKey("lockQueue")
@@ -95,7 +106,7 @@ val DownloadExtraPathKey = stringPreferencesKey("dlExtraPath") // previously "do
 val DownloadPathKey = stringPreferencesKey("dlPath") // previously "downloadPath"
 val MaxImageCacheSizeKey = intPreferencesKey("maxImageCacheSize")
 val MaxSongCacheSizeKey = intPreferencesKey("maxSongCacheSize")
-
+val LogExportPathKey = stringPreferencesKey("logExportPath")
 
 /**
  * Privacy
@@ -119,10 +130,12 @@ val LocalLibraryEnableKey = booleanPreferencesKey("localLibraryEnable")
  */
 val AutomaticScannerKey = booleanPreferencesKey("autoLocalScanner")
 val ScannerSensitivityKey = stringPreferencesKey("scannerSensitivity")
+val ArtistLinkingSensitivityKey = stringPreferencesKey("artistLinkingSensitivity")
 val ScannerImplKey = stringPreferencesKey("scannerImpl")
 val ScannerStrictFilePathsKey = booleanPreferencesKey("scannerStrictFilePaths")
 val ScannerStrictExtKey = booleanPreferencesKey("scannerStrictExt")
-//val LookupYtmArtistsKey = booleanPreferencesKey("lookupYtmArtists") // removed key
+val LookupYtmArtistsKey = booleanPreferencesKey("lookupYtmArtists")
+val ScannerOnlyNewFilesKey = booleanPreferencesKey("scanner_only_new_files")
 
 val ScanPathsKey = stringPreferencesKey("inclScanPaths") // previously "scanPaths"
 val ExcludedScanPathsKey = stringPreferencesKey("exclScanPaths") // previously "excludedScanPaths"
@@ -134,7 +147,8 @@ val LastLocalScanKey = longPreferencesKey("lastLocalScan")
 val DevSettingsKey = booleanPreferencesKey("devSettings")
 val OobeStatusKey = intPreferencesKey("oobeStatus")
 val SwipeToSkipKey = booleanPreferencesKey("swipeToSkip")
-
+val EnableLogToFileKey = booleanPreferencesKey("enableLogToFile")
+val LogToFileLevelKey = stringPreferencesKey("logToFileLevel") // "V", "D", "I", "W", "E"
 
 /**
  * Non-settings UI preferences

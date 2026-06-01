@@ -662,8 +662,19 @@ object YouTube {
         innerTube.deletePlaylist(WEB_REMIX, playlistId)
     }
 
-    suspend fun player(videoId: String, playlistId: String? = null, client: YouTubeClient, signatureTimestamp: Int? = null, webPlayerPot: String? = null): Result<PlayerResponse> = runCatching {
-        innerTube.player(client, videoId, playlistId, signatureTimestamp, webPlayerPot).body<PlayerResponse>()
+
+    suspend fun player(
+        videoId: String,
+        playlistId: String? = null,client: YouTubeClient,
+        signatureTimestamp: Int? = null,
+        webPlayerPot: String? = null,
+        deviceOsVersion: String = "13",
+        deviceSdkVersion: Int = 33,
+        deviceModel: String = "Mobile"
+    ): Result<PlayerResponse> = runCatching {
+        // Update the toContext call inside here
+        val context = client.toContext(locale, visitorData, dataSyncId, deviceOsVersion, deviceSdkVersion, deviceModel)
+        innerTube.player(client, videoId, playlistId, signatureTimestamp, webPlayerPot, context).body<PlayerResponse>()
     }
 
     suspend fun registerPlayback(playlistId: String? = null, playbackTracking: String) = runCatching {

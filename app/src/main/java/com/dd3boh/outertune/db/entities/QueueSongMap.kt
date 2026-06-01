@@ -27,4 +27,5 @@ data class QueueSongMap(
     @ColumnInfo(index = true) val songId: String,
     val index: Long,
     val shuffledIndex: Long,
+    val parentArtist: String? = null,
 )

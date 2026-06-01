@@ -276,5 +276,4 @@
     <string name="auto_load_more">Αυτόματη φόρτωση περισσότερων τραγουδιών</string>
     <string name="search_history">Ιστορικό αναζήτησης</string>
     <string name="disable_screenshot">Απενεργοποίηση στιγμιότυπων οθόνης</string>
-    <string name="action_login">Συνδεθείτε</string>
 </resources>

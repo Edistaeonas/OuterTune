@@ -2,6 +2,7 @@ package com.dd3boh.outertune.ui.screens.settings.fragments
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.rounded.FolderCopy
 import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
@@ -55,11 +57,13 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import coil3.annotation.ExperimentalCoilApi
 import coil3.imageLoader
+import com.dd3boh.outertune.LocalDatabase
 import com.dd3boh.outertune.LocalDownloadUtil
 import com.dd3boh.outertune.LocalPlayerConnection
 import com.dd3boh.outertune.R
 import com.dd3boh.outertune.constants.DownloadExtraPathKey
 import com.dd3boh.outertune.constants.DownloadPathKey
+import com.dd3boh.outertune.constants.LogExportPathKey
 import com.dd3boh.outertune.constants.MaxImageCacheSizeKey
 import com.dd3boh.outertune.constants.MaxSongCacheSizeKey
 import com.dd3boh.outertune.constants.ScanPathsKey
@@ -74,6 +78,7 @@ import com.dd3boh.outertune.ui.component.button.ResizableIconButton
 import com.dd3boh.outertune.ui.dialog.ActionPromptDialog
 import com.dd3boh.outertune.ui.dialog.DefaultDialog
 import com.dd3boh.outertune.ui.dialog.InfoLabel
+import com.dd3boh.outertune.utils.LogCollector
 import com.dd3boh.outertune.utils.dlCoroutine
 import com.dd3boh.outertune.utils.formatFileSize
 import com.dd3boh.outertune.utils.rememberPreference
@@ -85,6 +90,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -92,10 +98,14 @@ import java.time.format.DateTimeFormatter
 fun ColumnScope.BackupAndRestoreFrag(viewModel: BackupRestoreViewModel) {
     val context = LocalContext.current
 
+    // State for the include/exclude toggle
+    var includeLocalFileInfo by rememberSaveable { mutableStateOf(true) }
+
     val backupLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
             if (uri != null) {
-                viewModel.backup(uri)
+                // Pass the boolean state to the ViewModel's backup function
+                viewModel.backup(uri, includeLocalFileInfo)
             }
         }
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -119,7 +129,28 @@ fun ColumnScope.BackupAndRestoreFrag(viewModel: BackupRestoreViewModel) {
                 )
             }
         )
+        // Checkbox with a label and clickable row
+        Row(
+            modifier = Modifier
+                .clickable { includeLocalFileInfo = !includeLocalFileInfo }
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = includeLocalFileInfo,
+                onCheckedChange = { includeLocalFileInfo = it }
+            )
+            Text(
+                text = stringResource(R.string.backup_include_local_info),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(start = 16.dp)
+            )
+        }
+
     }
+
+
     Spacer(modifier = Modifier.height(16.dp))
 
     ElevatedCard(
@@ -179,6 +210,20 @@ fun ColumnScope.DownloadsFrag() {
     var showPathsDialog by rememberSaveable {
         mutableStateOf(false)
     }
+
+    val (logExportPath, onLogExportPathChange) = rememberPreference(LogExportPathKey, "")
+
+    val logDirLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()        ) { uri ->
+        uri?.let {
+            context.contentResolver.takePersistableUriPermission(
+                it,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+            onLogExportPathChange(it.toString())
+        }
+    }
+
 
     LaunchedEffect(downloadCache) {
         while (isActive) {
@@ -324,6 +369,38 @@ fun ColumnScope.DownloadsFrag() {
             },
             isEnabled = !isLoading && !downloadPath.isEmpty()
         )
+
+        PreferenceEntry(
+            title = { Text(stringResource(R.string.log_migrate_path_title)) },
+            description = if (logExportPath.isNotEmpty()) {
+                absoluteFilePathFromUri(context, logExportPath.toUri()) ?: logExportPath
+            } else {
+                stringResource(R.string.log_migrate_path_description)
+            },
+            icon = { Icon(Icons.Rounded.FolderCopy, null) },
+            onClick = { logDirLauncher.launch(null) }
+        )
+
+        PreferenceEntry(
+            title = { Text(stringResource(R.string.log_migrate_button_title)) },
+            icon = { Icon(Icons.Rounded.Downloading, null) },
+            onClick = {
+                if (logExportPath.isEmpty()) {
+                    logDirLauncher.launch(null)
+                } else {
+                    coroutineScope.launch(Dispatchers.IO) {
+                        val success = LogCollector.exportLog(context, logExportPath.toUri())
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(
+                                context,
+                                if (success) R.string.log_migrate_success else R.string.log_migrate_error,
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                }
+            }
+        )
     }
 
 
@@ -374,9 +451,7 @@ fun ColumnScope.DownloadsFrag() {
                 // download path cannot a scan path, or a subdir of a scan path
                 tempFilePath.toString().length <= it.toString().length && tempFilePath.toString()
                     .contains(it.toString())
-            },
-            modifier = Modifier
-                .verticalScroll(rememberScrollState()),
+            }
         ) {
 
             val dirPickerLauncher = rememberLauncherForActivityResult(
@@ -497,7 +572,11 @@ fun ColumnScope.DownloadsFrag() {
         DefaultDialog(
             onDismiss = { showDlInfoDialog = false },
             content = {
-                Column() {
+                Column(
+                    modifier = Modifier
+                        .weight(1f, false)
+                        .verticalScroll(rememberScrollState())
+                ) {
                     Text(
                         text = stringResource(R.string.dl_storage_tooltip),
                         style = MaterialTheme.typography.bodyLarge,
@@ -560,9 +639,7 @@ fun ColumnScope.DownloadsFrag() {
             isInputValid = uriListFromString(scanPaths).toList().none { scanPath ->
                 // scan path cannot be contain any dl extras path
                 tempScanPaths.toList().any { it.toString().contains(scanPath.toString()) }
-            },
-            modifier = Modifier
-                .verticalScroll(rememberScrollState()),
+            }
         ) {
             val dirPickerLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.OpenDocumentTree()

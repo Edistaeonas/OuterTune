@@ -25,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.ConfirmationNumber
 import androidx.compose.material.icons.rounded.Coronavirus
@@ -69,9 +70,15 @@ import com.dd3boh.outertune.constants.AudioOffloadKey
 import com.dd3boh.outertune.constants.DevSettingsKey
 import com.dd3boh.outertune.constants.MaxQueuesKey
 import com.dd3boh.outertune.constants.OobeStatusKey
+import com.dd3boh.outertune.constants.SCANNER_OWNER_LM
+import com.dd3boh.outertune.constants.ScannerImpl
 import com.dd3boh.outertune.constants.TabletUiKey
 import com.dd3boh.outertune.constants.TopBarInsets
 import com.dd3boh.outertune.constants.VisitorDataKey
+import com.dd3boh.outertune.constants.EnableLogToFileKey
+import com.dd3boh.outertune.constants.LogToFileLevelKey
+import com.dd3boh.outertune.ui.component.ListPreference
+import androidx.compose.material.icons.rounded.BugReport
 import com.dd3boh.outertune.ui.component.ColumnWithContentPadding
 import com.dd3boh.outertune.ui.component.PreferenceEntry
 import com.dd3boh.outertune.ui.component.PreferenceGroupTitle
@@ -80,7 +87,9 @@ import com.dd3boh.outertune.ui.component.button.IconButton
 import com.dd3boh.outertune.ui.dialog.CounterDialog
 import com.dd3boh.outertune.ui.utils.backToMain
 import com.dd3boh.outertune.utils.dataStore
+import com.dd3boh.outertune.utils.lmScannerCoroutine
 import com.dd3boh.outertune.utils.rememberPreference
+import com.dd3boh.outertune.utils.scanners.LocalMediaScanner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -111,6 +120,9 @@ fun ExperimentalSettings(
     val (devSettings, onDevSettingsChange) = rememberPreference(DevSettingsKey, defaultValue = false)
     val (oobeStatus, onOobeStatusChange) = rememberPreference(OobeStatusKey, defaultValue = 0)
 
+    val (enableLogToFile, onEnableLogToFileChange) = rememberPreference(key = EnableLogToFileKey, defaultValue = false)
+    val (logToFileLevel, onLogToFileLevelChange) = rememberPreference(key = LogToFileLevelKey, defaultValue = "I")
+
     var nukeEnabled by remember {
         mutableStateOf(false)
     }
@@ -129,7 +141,7 @@ fun ExperimentalSettings(
         )
         SwitchPreference(
             title = { Text(stringResource(R.string.tablet_ui_title)) },
-            description = stringResource(R.string.tablet_ui_title_description),
+            description = stringResource(R.string.tablet_ui_title),
             icon = { Icon(Icons.Rounded.Devices, null) },
             checked = tabletUi,
             onCheckedChange = onTabletUiChange
@@ -187,6 +199,39 @@ fun ExperimentalSettings(
         )
 
         if (devSettings) {
+
+            // Logging to file settings
+            SwitchPreference(
+                title = { Text(stringResource(R.string.enable_log_to_file)) },
+                description = stringResource(R.string.enable_log_to_file_description),
+                icon = { Icon(Icons.Rounded.BugReport, null) },
+                checked = enableLogToFile,
+                onCheckedChange = onEnableLogToFileChange
+            )
+
+            if (enableLogToFile) {
+                val levels = listOf("V", "D", "I", "W", "E")
+                val levelLabels = mapOf(
+                    "V" to "Verbose",
+                    "D" to "Debug",
+                    "I" to "Info",
+                    "W" to "Warning",
+                    "E" to "Error"
+                )
+
+                ListPreference(
+                    title = { Text(stringResource(R.string.log_level)) },
+                    icon = { Icon(Icons.Rounded.BugReport, null) },
+                    selectedValue = logToFileLevel,
+                    values = levels,
+                    valueText = { levelLabels[it] ?: it },
+                    onValueSelected = onLogToFileLevelChange
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+
             SwitchPreference(
                 title = { Text(stringResource(R.string.audio_offload)) },
                 description = stringResource(R.string.audio_offload_description),
@@ -218,6 +263,25 @@ fun ExperimentalSettings(
                         context.dataStore.edit { settings ->
                             settings.remove(VisitorDataKey)
                         }
+                    }
+                }
+            )
+
+            PreferenceEntry(
+                title = { Text("DEBUG: Force local to remote artist migration NOW") },
+                icon = { Icon(Icons.Rounded.Backup, null) },
+                onClick = {
+                    Toast.makeText(context, context.getString(R.string.scanner_ytm_link_start), Toast.LENGTH_SHORT)
+                        .show()
+                    coroutineScope.launch(lmScannerCoroutine) {
+                        val scanner = LocalMediaScanner.getScanner(context, ScannerImpl.TAGLIB, SCANNER_OWNER_LM)
+                        Log.i(SETTINGS_TAG, "Force Migrating local artists to YTM (MANUAL TRIGGERED)")
+                        scanner.localToRemoteArtist(database)
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.scanner_ytm_link_success),
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 }
             )

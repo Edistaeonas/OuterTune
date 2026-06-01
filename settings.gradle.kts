@@ -1,11 +1,24 @@
 @file:Suppress("UnstableApiUsage")
+
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
+
+plugins {
+    id("org.gradle.toolchains.foojay-resolver-convention") version "0.8.0"
+}
+
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
 
     repositories {
+        maven("https://jitpack.io")
         google()
         mavenCentral()
-        maven { setUrl("https://jitpack.io") }
     }
 }
 
@@ -27,11 +40,11 @@ include(":taglib")
 // From:
 //      implementation(libs.newpipe.extractor)
 // To:
-//      implementation("com.github.teamnewpipe:NewPipeExtractor")
+//      implementation("com.github.gechoto:NewPipeExtractor")
 
 //includeBuild("../NewPipeExtractor") {
 //    dependencySubstitution {
-//        substitute(module("com.github.teamnewpipe:NewPipeExtractor")).using(project(":extractor"))
+//        substitute(module("com.github.gechoto:NewPipeExtractor")).using(project(":extractor"))
 //    }
 //}
 

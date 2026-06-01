@@ -127,19 +127,21 @@ class InnerTube {
         playlistId: String?,
         signatureTimestamp: Int?,
         webPlayerPot: String?,
+        context: Context // New
     ) = httpClient.post("player") {
         ytClient(client, setLogin = true)
         setBody(
             PlayerBody(
-                context = client.toContext(locale, visitorData, dataSyncId).let {
-                    if (client.isEmbedded) {
-                        it.copy(
-                            thirdParty = Context.ThirdParty(
-                                embedUrl = "https://www.youtube.com/watch?v=${videoId}"
-                            )
-                        )
-                    } else it
-                },
+//                context = client.toContext(locale, visitorData, dataSyncId).let {
+//                    if (client.isEmbedded) {
+//                        it.copy(
+//                            thirdParty = Context.ThirdParty(
+//                                embedUrl = "https://www.youtube.com/watch?v=${videoId}"
+//                            )
+//                        )
+//                    } else it
+//                },
+                context = context,
                 videoId = videoId,
                 playlistId = playlistId,
                 playbackContext = if (client.useSignatureTimestamp && signatureTimestamp != null) {

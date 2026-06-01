@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -67,7 +68,8 @@ fun AccountScreen(
 
     val innerTubeCookie by rememberPreference(InnerTubeCookieKey, "")
     val isLoggedIn = remember(innerTubeCookie) {
-        "SAPISID" in parseCookieString(innerTubeCookie)
+        val effectiveCookie = innerTubeCookie.ifEmpty { com.zionhuang.innertube.YouTube.cookie ?: "" }
+        "SAPISID" in parseCookieString(effectiveCookie)
     }
     val accountName by rememberPreference(AccountNameKey, stringResource(R.string.not_logged_in))
 
@@ -75,6 +77,12 @@ fun AccountScreen(
     val albums by viewModel.albums.collectAsState()
     val artists by viewModel.artists.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+
+    // Trigger a library refresh the moment the UI detects a successful login
+    LaunchedEffect(isLoggedIn) {
+        if (isLoggedIn && playlists == null) {
+            viewModel.refresh()        }
+    }
 
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = GridThumbnailHeight + 24.dp),

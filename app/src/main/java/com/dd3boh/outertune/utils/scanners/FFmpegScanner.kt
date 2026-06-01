@@ -22,6 +22,7 @@ import com.dd3boh.outertune.db.entities.SongEntity
 import com.dd3boh.outertune.models.SongTempData
 import com.dd3boh.outertune.ui.utils.ARTIST_SEPARATORS
 import com.dd3boh.outertune.ui.utils.EXTRACTOR_TAG
+import com.dd3boh.outertune.utils.sanitizeMetadata
 import wah.mikooomich.ffMetadataEx.AudioMetadata
 import wah.mikooomich.ffMetadataEx.FFMetadataEx
 import wah.mikooomich.ffMetadataEx.FFmpegWrapper
@@ -77,6 +78,7 @@ class FFmpegScanner() : MetadataScanner {
             var rawTitle: String? = data.title
             val rawArtists: String? = data.artist
             var albumName: String? = data.album
+            var albumArtist: String? = null
             val genres: String? = data.genre
             var trackNumber: Int? = null
             var discNumber: Int? = null
@@ -87,6 +89,8 @@ class FFmpegScanner() : MetadataScanner {
             val sampleRate: Int = data.sampleRate
             val channels: Int = data.channels
             val duration: Long = (data.duration / toSeconds).roundToLong()
+            var commentTag: String? = null
+            var composer: String? = null
 
             var artistList: MutableList<ArtistEntity> = ArrayList<ArtistEntity>()
             var genresList: MutableList<GenreEntity> = ArrayList<GenreEntity>()
@@ -104,6 +108,10 @@ class FFmpegScanner() : MetadataScanner {
                         if (albumName == null) {
                             albumName = it.substringAfter(':').trim()
                         }
+                    }
+
+                    "ALBUM_ARTIST", "album_artist", "ALBUMARTIST" -> {
+                        albumArtist = it.substringAfter(':').trim()
                     }
 
                     "ARTISTS", "ARTIST", "artist" -> {
@@ -157,7 +165,8 @@ class FFmpegScanner() : MetadataScanner {
                             }
                         }
                     }
-
+                    "COMMENT", "comment" -> commentTag = it.substringAfter(':').trim()
+                    "COMPOSER", "composer" -> composer = it.substringAfter(':').trim()
                     else -> {
                         extraData += "$tag: $it\n"
                     }
@@ -231,8 +240,8 @@ class FFmpegScanner() : MetadataScanner {
                 // user error at this point. I am not parsing all the weird ways the string can come in
             }
 
-            artistList = artistList.filterNot { it.name.isBlank() }.distinctBy { it.name.lowercase() }.toMutableList()
-            genresList = genresList.filterNot { it.title.isBlank() }.distinctBy { it.title.lowercase() }.toMutableList()
+            artistList = artistList.filterNot { it.name.isBlank() }.distinctBy { it.name }.toMutableList()
+            genresList = genresList.filterNot { it.title.isBlank() }.distinctBy { it.title }.toMutableList()
 
             return SongTempData(
                 Song(
@@ -245,12 +254,15 @@ class FFmpegScanner() : MetadataScanner {
                         discNumber = discNumber,
                         albumId = albumId,
                         albumName = albumName,
+                        albumArtist = albumArtist,
                         year = year,
                         date = date,
                         dateModified = dateModified,
                         isLocal = true,
                         inLibrary = timeNow,
-                        localPath = file.absolutePath
+                        localPath = file.absolutePath,
+                        commentTag = commentTag,
+                        composer = composer
                     ),
                     artists = artistList,
                     // album not working

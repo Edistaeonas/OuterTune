@@ -76,7 +76,6 @@ fun YouTubePlaylistMenu(
     val database = LocalDatabase.current
     val downloadUtil = LocalDownloadUtil.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val queueBoard by playerConnection.queueBoard.collectAsState()
     val dbPlaylist by database.playlistByBrowseId(playlist.id).collectAsState(initial = null)
 
     var showChoosePlaylistDialog by rememberSaveable {
@@ -248,7 +247,15 @@ fun YouTubePlaylistMenu(
                 state = downloadState,
                 onDownload = {
                     val _songs = songs.map { it.toMediaMetadata() }
-                    downloadUtil.download(_songs)
+                    val playlistEntity = PlaylistEntity(
+                        id = playlist.id,
+                        name = playlist.title,
+                        browseId = playlist.id,
+                        thumbnailUrl = playlist.thumbnail,
+                        isLocal = true,
+                        bookmarkedAt = java.time.LocalDateTime.now()
+                    )
+                    downloadUtil.downloadCollection(_songs, playlistEntity)
                 },
                 onRemoveDownload = {
                     showRemoveDownloadDialog = true
@@ -292,12 +299,12 @@ fun YouTubePlaylistMenu(
                             YouTube.playlist(playlist.id).completed().getOrNull()?.songs.orEmpty()
                         }
                     }.let { songs ->
-                        val q = queueBoard.addQueue(
+                        val q = playerConnection.service.queueBoard.addQueue(
                             queueName, songs.map { it.toMediaMetadata() },
                             forceInsert = true, delta = false
                         )
                         q?.let {
-                            queueBoard.setCurrQueue(it)
+                            playerConnection.service.queueBoard.setCurrQueue(it)
                         }
                     }
                 }
@@ -355,14 +362,18 @@ fun YouTubePlaylistMenu(
                 TextButton(
                     onClick = {
                         showRemoveDownloadDialog = false
-                        songs.forEach { song ->
-                            DownloadService.sendRemoveDownload(
-                                context,
-                                ExoDownloadService::class.java,
-                                song.id,
-                                false
-                            )
-                        }
+//                        songs.forEach { song ->
+//                            DownloadService.sendRemoveDownload(
+//                                context,
+//                                ExoDownloadService::class.java,
+//                                song.id,
+//                                false
+//                            )
+//                        }
+                        // FIX: Use the recursive helper with the playlist ID
+                        // This ensures every song in the playlist is deleted from disk and DB
+                        downloadUtil.removeCollectionDownload(playlist.id)
+                        onDismiss()
                     }
                 ) {
                     Text(text = stringResource(android.R.string.ok))

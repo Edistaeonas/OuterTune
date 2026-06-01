@@ -94,3 +94,6 @@ const val EXTRACTOR_DEBUG = false
 const val DEBUG_SAVE_OUTPUT = false // ignored (will be false) when EXTRACTOR_DEBUG IS false
 
 const val QUEUE_DEBUG = false
+
+// show debug info overlay on top of the screen
+const val SHOW_DEBUG_OVERLAY = false

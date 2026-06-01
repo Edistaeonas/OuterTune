@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
@@ -128,10 +129,10 @@ import com.dd3boh.outertune.constants.MiniPlayerHeight
 import com.dd3boh.outertune.constants.PlayerHorizontalPadding
 import com.dd3boh.outertune.constants.SeekIncrement
 import com.dd3boh.outertune.constants.SeekIncrementKey
+import com.dd3boh.outertune.constants.SwipeToRemoveKey
 import com.dd3boh.outertune.extensions.metadata
 import com.dd3boh.outertune.extensions.move
 import com.dd3boh.outertune.extensions.supportsWideScreen
-import com.dd3boh.outertune.extensions.tabMode
 import com.dd3boh.outertune.extensions.togglePlayPause
 import com.dd3boh.outertune.extensions.toggleRepeatMode
 import com.dd3boh.outertune.models.MediaMetadata
@@ -164,6 +165,7 @@ fun QueueSheet(
     state: BottomSheetState,
     onTerminate: () -> Unit,
     playerBottomSheetState: BottomSheetState,
+    onBackgroundColor: Color,
     navController: NavController,
     modifier: Modifier = Modifier,
 ) {
@@ -197,7 +199,7 @@ fun QueueSheet(
                 }) {
                     Icon(
                         imageVector = Icons.Rounded.ExpandLess,
-                        tint = MaterialTheme.colorScheme.onSurface,
+                        tint = onBackgroundColor,
                         contentDescription = null,
                     )
                 }
@@ -251,10 +253,11 @@ fun BoxScope.QueueContent(
     val haptic = LocalHapticFeedback.current
     val menuState = LocalMenuState.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val qb by playerConnection.queueBoard.collectAsState()
+    val qb = playerConnection.service.queueBoard
 
     // preferences
     var lockQueue by rememberPreference(LockQueueKey, defaultValue = false)
+    val swipeToRemove by rememberPreference(SwipeToRemoveKey, defaultValue = false)
 
     // player
     val currentWindowIndex by playerConnection.currentWindowIndex.collectAsState()
@@ -272,35 +275,9 @@ fun BoxScope.QueueContent(
     )
 
     // ui
-    val tabMode = context.tabMode()
     val wideScreen = context.supportsWideScreen()
     val landscape =
-        LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE && wideScreen && !tabMode
-
-    val insets = LocalPlayerAwareWindowInsets.current
-    val insetsSTE = if (!tabMode) {
-        InsetsSafeSTE
-    } else {
-        insets
-            .only(WindowInsetsSides.Start + WindowInsetsSides.End)
-            .add(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
-    }
-    val insetsSE = if (!tabMode) {
-        InsetsSafeSE
-    } else {
-        insets.only(WindowInsetsSides.Start + WindowInsetsSides.End)
-    }
-    val insetsS = if (!tabMode) {
-        InsetsSafeS
-    } else {
-        insets.only(WindowInsetsSides.Start)
-    }
-    val insetsE = if (!tabMode) {
-        InsetsSafeE
-    } else {
-        insets.only(WindowInsetsSides.End)
-    }
-
+        LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE && wideScreen
 
     val queueWindows by playerConnection.queueWindows.collectAsState()
 
@@ -540,11 +517,11 @@ fun BoxScope.QueueContent(
         ) {
             itemsIndexed(
                 items = mutableQueues,
-                key = { _, item -> item.id }
+                key = { index, item -> "${item.id}_$index" }
             ) { index, mq ->
                 ReorderableItem(
                     state = reorderableStateEx,
-                    key = mq.hashCode()
+                    key = "${mq.id}_$index"
                 ) {
                     Row( // wrapper
                         modifier = Modifier
@@ -565,7 +542,7 @@ fun BoxScope.QueueContent(
                                         exitDetachHead()
                                     } else {
                                         detachedHead = true
-                                        isSearching = false // no searching in detach mode
+                                        isSearching = false // no searching in detached mode
                                         detachedQueue = mq
                                         onExitSelectionMode()
                                     }
@@ -696,12 +673,15 @@ fun BoxScope.QueueContent(
             val thumbnailSize = (ListThumbnailSize.value * density.density).roundToInt()
             itemsIndexed(
                 items = if (isSearching) filteredSongs else mutableSongs,
-                key = { _, item -> item.hashCode() },
+                // Use a combination of ID and index to ensure absolute uniqueness 
+                // and avoid the "Key already used" crash.
+                key = { index, item -> "${item.id}_$index" },
                 contentType = { _, _ -> CONTENT_TYPE_SONG }
             ) { index, window ->
+                val stableKey = "${window.id}_$index"
                 ReorderableItem(
                     state = reorderableState,
-                    key = window.hashCode()
+                    key = stableKey
                 ) {
                     val dismissState = rememberSwipeToDismissBoxState(
                         positionalThreshold = { totalDistance ->
@@ -737,9 +717,9 @@ fun BoxScope.QueueContent(
                     val onCheckedChange: (Boolean) -> Unit = {
                         haptic.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
                         if (it) {
-                            selectedItems.add(window.hashCode())
+                            selectedItems.add(index)
                         } else {
-                            selectedItems.remove(window.hashCode())
+                            selectedItems.remove(index)
                         }
                     }
 
@@ -751,7 +731,7 @@ fun BoxScope.QueueContent(
                             trailingContent = {
                                 if (inSelectMode) {
                                     Checkbox(
-                                        checked = window.hashCode() in selectedItems,
+                                        checked = index in selectedItems,
                                         onCheckedChange = onCheckedChange
                                     )
                                 } else {
@@ -786,25 +766,25 @@ fun BoxScope.QueueContent(
                                     }
                                 }
                             },
-                            isSelected = inSelectMode && window.hashCode() in selectedItems,
+                            isSelected = inSelectMode && index in selectedItems,
                             preferredSize = thumbnailSize,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .combinedClickable(
                                     onClick = {
                                         if (inSelectMode) {
-                                            onCheckedChange(window.hashCode() !in selectedItems)
+                                            onCheckedChange(index !in selectedItems)
                                         } else {
                                             coroutineScope.launch(Dispatchers.Main) {
                                                 if (index == currentWindowIndex && !detachedHead) {
                                                     playerConnection.player.togglePlayPause()
                                                 } else {
-                                                    val index = index // race condition...?
+                                                    val targetIndex = index // race condition...?
                                                     if (detachedHead) {
-                                                        detachedQueue?.setCurrentQueuePos(index)
+                                                        detachedQueue?.setCurrentQueuePos(targetIndex)
                                                         qb.setCurrQueue(detachedQueue, false)
                                                     } else {
-                                                        playerConnection.player.seekToDefaultPosition(index)
+                                                        playerConnection.player.seekToDefaultPosition(targetIndex)
                                                     }
                                                     playerConnection.player.prepare() // else cannot click to play after auto-skip onError stop
                                                     playerConnection.player.playWhenReady = true
@@ -816,14 +796,14 @@ fun BoxScope.QueueContent(
                                     onLongClick = {
                                         if (!inSelectMode) {
                                             inSelectMode = true
-                                            selectedItems.add(window.hashCode())
+                                            selectedItems.add(index)
                                         }
                                     }
                                 )
                         )
                     }
 
-                    if (!lockQueue && !inSelectMode && !detachedHead) {
+                    if (!lockQueue && !inSelectMode && !detachedHead && swipeToRemove) {
                         SwipeToDismissBox(
                             state = dismissState,
                             backgroundContent = {},
@@ -911,13 +891,13 @@ fun BoxScope.QueueContent(
                 if (inSelectMode && !isSearching) {
                     SelectHeader(
                         navController = navController,
-                        selectedItems = selectedItems.mapNotNull { uidHash ->
-                            (detachedQueue?.getCurrentQueueShuffled() ?: mutableSongs).find { it.hashCode() == uidHash }
+                        selectedItems = selectedItems.mapNotNull { idx ->
+                            (detachedQueue?.getCurrentQueueShuffled() ?: mutableSongs).getOrNull(idx)
                         },
                         totalItemCount = (detachedQueue?.getCurrentQueueShuffled() ?: mutableSongs).size,
                         onSelectAll = {
                             selectedItems.clear()
-                            selectedItems.addAll(mutableSongs.map { it.hashCode() })
+                            selectedItems.addAll(0 until (detachedQueue?.getCurrentQueueShuffled() ?: mutableSongs).size)
                         },
                         onDeselectAll = { selectedItems.clear() },
                         menuState = menuState,
@@ -1138,8 +1118,8 @@ fun BoxScope.QueueContent(
             Column(
                 modifier = Modifier.fillMaxWidth(0.5f)
             ) {
-                songHeader(Modifier.windowInsetsPadding(insetsSTE))
-                songList(insetsS.asPaddingValues())
+                songHeader(Modifier.windowInsetsPadding(InsetsSafeSTE))
+                songList(InsetsSafeS.asPaddingValues())
             }
 
             Spacer(Modifier.width(8.dp))
@@ -1161,13 +1141,13 @@ fun BoxScope.QueueContent(
                             Row {
                                 SelectHeader(
                                     navController = navController,
-                                    selectedItems = selectedItems.mapNotNull { uidHash ->
-                                        mutableSongs.find { it.hashCode() == uidHash }
+                                    selectedItems = selectedItems.mapNotNull { idx ->
+                                        mutableSongs.getOrNull(idx)
                                     },
                                     totalItemCount = mutableSongs.size,
                                     onSelectAll = {
                                         selectedItems.clear()
-                                        selectedItems.addAll(mutableSongs.map { it.hashCode() })
+                                        selectedItems.addAll(0 until mutableSongs.size)
                                     },
                                     onDeselectAll = { selectedItems.clear() },
                                     menuState = menuState,
@@ -1176,8 +1156,8 @@ fun BoxScope.QueueContent(
                             }
                         }
                     } else {
-                        queueHeader(Modifier.windowInsetsPadding(insetsSTE))
-                        queueList(insetsE.asPaddingValues())
+                        queueHeader(Modifier.windowInsetsPadding(InsetsSafeSTE))
+                        queueList(InsetsSafeE.asPaddingValues())
                     }
                 }
 
@@ -1212,13 +1192,13 @@ fun BoxScope.QueueContent(
                         Row {
                             SelectHeader(
                                 navController = navController,
-                                selectedItems = selectedItems.mapNotNull { uidHash ->
-                                    filteredSongs.find { it.hashCode() == uidHash }
+                                selectedItems = selectedItems.mapNotNull { idx ->
+                                    filteredSongs.getOrNull(idx)
                                 },
                                 totalItemCount = filteredSongs.size,
                                 onSelectAll = {
                                     selectedItems.clear()
-                                    selectedItems.addAll(filteredSongs.map { it.hashCode() })
+                                    selectedItems.addAll(0 until filteredSongs.size)
                                 },
                                 onDeselectAll = { selectedItems.clear() },
                                 menuState = menuState,
@@ -1236,18 +1216,18 @@ fun BoxScope.QueueContent(
                             modifier = Modifier
                                 .fillMaxHeight(0.4f)
                         ) {
-                            queueHeader(Modifier.windowInsetsPadding(insetsSTE))
-                            queueList(insetsSE.asPaddingValues())
+                            queueHeader(Modifier.windowInsetsPadding(InsetsSafeSTE))
+                            queueList(InsetsSafeSE.asPaddingValues())
                         }
                         Spacer(Modifier.height(12.dp))
-                        songHeader(Modifier.windowInsetsPadding(insetsSE)) // song header
+                        songHeader(Modifier.windowInsetsPadding(InsetsSafeSE)) // song header
                     }
                 }
 
                 val songListInsets = if (mqExpand) {
-                    insetsSE
+                    InsetsSafeSE
                 } else {
-                    insetsSTE
+                    InsetsSafeSTE
                 }
                 songList(songListInsets.asPaddingValues()) // song list
             }

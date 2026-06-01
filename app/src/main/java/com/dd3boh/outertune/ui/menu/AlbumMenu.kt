@@ -44,6 +44,7 @@ import com.dd3boh.outertune.LocalNetworkConnected
 import com.dd3boh.outertune.LocalPlayerConnection
 import com.dd3boh.outertune.R
 import com.dd3boh.outertune.db.entities.Album
+import com.dd3boh.outertune.db.entities.PlaylistEntity
 import com.dd3boh.outertune.db.entities.Song
 import com.dd3boh.outertune.extensions.toMediaItem
 import com.dd3boh.outertune.models.toMediaMetadata
@@ -69,7 +70,6 @@ fun AlbumMenu(
     val database = LocalDatabase.current
     val downloadUtil = LocalDownloadUtil.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val queueBoard by playerConnection.queueBoard.collectAsState()
     val isNetworkConnected = LocalNetworkConnected.current
     val scope = rememberCoroutineScope()
     val libraryAlbum by database.album(originalAlbum.id).collectAsState(initial = originalAlbum)
@@ -81,7 +81,7 @@ fun AlbumMenu(
         songs.all { it.song.inLibrary != null }
     }
 
-//    TODO: for when local albums are a thing
+//    for when local albums are a thing
 //    val allLocal by remember(songs) { // if only local songs in this selection
 //        mutableStateOf(songs.isNotEmpty() && songs.all { it.song.isLocal })
 //    }
@@ -203,21 +203,34 @@ fun AlbumMenu(
         if (album.album.isLocal == false) {
             DownloadGridMenu(
                 state = downloadState,
+//                onDownload = {
+//                    val _songs = songs
+//                        .filterNot { it.song.isLocal }
+//                        .map { it.toMediaMetadata() }
+//                    downloadUtil.download(_songs)
+//                },
                 onDownload = {
-                    val _songs = songs
-                        .filterNot { it.song.isLocal }
-                        .map { it.toMediaMetadata() }
-                    downloadUtil.download(_songs)
+                    val _songs = songs.map { it.toMediaMetadata() } // or appropriate mapping
+                    val playlistEntity = PlaylistEntity(
+                        id = album.album.id, // for AlbumScreen/AlbumMenu use appropriate album id variable
+                        name = album.album.title,
+                        browseId = album.album.id,
+                        thumbnailUrl = album.album.thumbnailUrl,
+                        isLocal = true
+                    )
+                    downloadUtil.downloadCollection(_songs, playlistEntity)
                 },
                 onRemoveDownload = {
-                    songs.forEach { song ->
-                        DownloadService.sendRemoveDownload(
-                            context,
-                            ExoDownloadService::class.java,
-                            song.id,
-                            false
-                        )
-                    }
+                    // This will loop through all songs mapped to this album ID and delete them
+                    downloadUtil.removeCollectionDownload(album.album.id)
+//                    songs.forEach { song ->
+//                        DownloadService.sendRemoveDownload(
+//                            context,
+//                            ExoDownloadService::class.java,
+//                            song.id,
+//                            false
+//                        )
+//                    }
                 }
             )
         }
@@ -276,12 +289,12 @@ fun AlbumMenu(
     if (showChooseQueueDialog) {
         AddToQueueDialog(
             onAdd = { queueName ->
-                val q = queueBoard.addQueue(
+                val q = playerConnection.service.queueBoard.addQueue(
                     queueName, songs.map { it.toMediaMetadata() },
                     forceInsert = true, delta = false
                 )
                 q?.let {
-                    queueBoard.setCurrQueue(it)
+                    playerConnection.service.queueBoard.setCurrQueue(it)
                 }
             },
             onDismiss = {

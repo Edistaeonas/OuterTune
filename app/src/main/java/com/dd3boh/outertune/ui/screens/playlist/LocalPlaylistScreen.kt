@@ -816,7 +816,7 @@ fun LocalPlaylistHeader(
                             else -> {
                                 IconButton(
                                     onClick = {
-                                        downloadUtil.download(songs.map { it.song.toMediaMetadata() })
+                                        downloadUtil.downloadSongs(songs.map { it.song.toMediaMetadata() })
                                     }
                                 ) {
                                     Icon(

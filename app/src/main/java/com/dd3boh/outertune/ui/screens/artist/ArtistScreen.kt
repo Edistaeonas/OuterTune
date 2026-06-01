@@ -1,7 +1,19 @@
+/*
+ * Copyright (C) 2024 z-huang/InnerTune
+ * Copyright (C) 2025 OuterTune Project
+ *
+ * SPDX-License-Identifier: GPL-3.0
+ *
+ * For any other attributions, refer to the git commit history
+ */
+
 package com.dd3boh.outertune.ui.screens.artist
 
 import android.content.Intent
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,25 +26,34 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.LinkOff
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -40,8 +61,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
@@ -50,6 +74,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -57,11 +82,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -112,6 +142,7 @@ import com.zionhuang.innertube.models.AlbumItem
 import com.zionhuang.innertube.models.ArtistItem
 import com.zionhuang.innertube.models.PlaylistItem
 import com.zionhuang.innertube.models.SongItem
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
@@ -129,6 +160,8 @@ fun ArtistScreen(
     val playerConnection = LocalPlayerConnection.current ?: return
 
     val swipeEnabled by rememberPreference(SwipeToQueueKey, true)
+    var showManualLinkDialog by rememberSaveable { mutableStateOf(false) }
+    var showUnlinkConfirmDialog by rememberSaveable { mutableStateOf(false) }
 
     val isPlaying by playerConnection.isPlaying.collectAsState()
     val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
@@ -150,8 +183,11 @@ fun ArtistScreen(
     }
 
     LaunchedEffect(libraryArtist) {
-        // always show local page for local artists. Show local page remote artist when offline
-        showLocal = libraryArtist?.artist?.isLocal == true
+        // ---  Default to online view if linked ---
+        // Show local mode by default ONLY if the artist is local AND unlinked.
+        // If the artist is linked (even if local), default to the online view (showLocal = false).
+        val artist = libraryArtist?.artist
+        showLocal = artist?.isLocal == true && artist.channelId.isNullOrEmpty()
     }
 
     val artistHead = @Composable {
@@ -207,46 +243,50 @@ fun ArtistScreen(
                     )
                 }
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.padding(12.dp)
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
                 ) {
-                    Button(
-                        onClick = {
-                            val watchEndpoint = artistPage?.artist?.shuffleEndpoint ?: artistPage?.artist?.playEndpoint
-                            playerConnection.playQueue(
-                                if (!showLocal && watchEndpoint != null) YouTubeQueue(watchEndpoint)
-                                else ListQueue(
-                                    title = artistName,
-                                    items = librarySongs.map { it.toMediaMetadata() },
-                                    startShuffled = true,
-                                ),
-                                isRadio = true,
-                                title = artistName
-                            )
-                        },
-                        contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
-                        modifier = Modifier.weight(1f)
+                    // --- ROW 1: Shuffle and Radio buttons ---
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Shuffle,
-                            contentDescription = null,
-                            modifier = Modifier.size(ButtonDefaults.IconSize)
-                        )
-                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                        Text(
-                            text = stringResource(R.string.shuffle)
-                        )
-                    }
+                        // Shuffle Button (Logic is correct)
+                        Button(
+                            onClick = {
+                                val watchEndpoint = artistPage?.artist?.shuffleEndpoint ?: artistPage?.artist?.playEndpoint
+                                playerConnection.playQueue(
+                                    if (!showLocal && watchEndpoint != null) YouTubeQueue(watchEndpoint)
+                                    else ListQueue(
+                                        title = artistName,
+                                        items = librarySongs.map { it.toMediaMetadata() },
+                                        startShuffled = true
+                                    ),
+                                    isRadio = true,
+                                    title = artistName
+                                )
+                            },
+                            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Shuffle,
+                                contentDescription = null,
+                                modifier = Modifier.size(ButtonDefaults.IconSize)
+                            )
+                            Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                            Text(stringResource(R.string.shuffle))
+                        }
 
-                    if (!showLocal) {
-                        artistPage?.artist?.radioEndpoint?.let { radioEndpoint ->
+                        // Radio Button (Logic is correct)
+                        val radioEndpoint = artistPage?.artist?.radioEndpoint
+                        if (radioEndpoint != null) {
                             OutlinedButton(
                                 onClick = {
                                     playerConnection.playQueue(
                                         YouTubeQueue(radioEndpoint),
                                         isRadio = true,
-                                        title = "Radio: ${artistPage.artist.title}"
+                                        title = "Radio: ${artistPage?.artist?.title}"
                                     )
                                 },
                                 contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
@@ -259,6 +299,47 @@ fun ArtistScreen(
                                 )
                                 Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                                 Text(stringResource(R.string.radio))
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+
+                    // --- ROW 2: Link/Unlink Button (DEFINITIVE FIX) ---
+                    val currentArtistEntity = libraryArtist?.artist
+                    if (currentArtistEntity != null) {
+                        // Case 1: Show LINK button.
+                        // This is for a local artist that is NOT linked to YouTube.
+                        if (currentArtistEntity.isLocal && !currentArtistEntity.isYouTubeArtist) {
+                            OutlinedButton(
+                                onClick = { showManualLinkDialog = true },
+                                contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Link,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(ButtonDefaults.IconSize)
+                                )
+                                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                                Text(stringResource(R.string.link_artist_button_label))
+                            }
+                        }
+                        // Case 2: Show UNLINK button.
+                        // This is for ANY artist in the library that IS linked to YouTube.
+                        else if (currentArtistEntity.isYouTubeArtist) {
+                            OutlinedButton(
+                                onClick = { showUnlinkConfirmDialog = true },
+                                contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.LinkOff,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(ButtonDefaults.IconSize)
+                                )
+                                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                                Text(stringResource(R.string.unlink_artist_button_label))
                             }
                         }
                     }
@@ -543,7 +624,8 @@ fun ArtistScreen(
         )
 
         HideOnScrollFAB(
-            visible = librarySongs.isNotEmpty() && libraryArtist?.artist?.isLocal != true,
+            //  Show toggle when both views are available ---
+            visible = artistPage != null && librarySongs.isNotEmpty(),
             lazyListState = lazyListState,
             icon = if (showLocal) Icons.Rounded.LibraryMusic else Icons.Rounded.Language,
             onClick = {
@@ -551,6 +633,54 @@ fun ArtistScreen(
                 if (!showLocal && artistPage == null) viewModel.fetchArtistsFromYTM()
             }
         )
+
+        if (showManualLinkDialog) {
+            ManualLinkDialog(
+                artistName = libraryArtist?.artist?.name ?: "",
+                viewModel = viewModel,
+                onDismiss = { showManualLinkDialog = false },
+                onConfirm = { selectedArtistId ->
+                    showManualLinkDialog = false
+                    viewModel.linkArtist(selectedArtistId) {
+                        coroutineScope.launch {
+                            navController.popBackStack()
+                            snackbarHostState.showSnackbar(
+                                message = context.getString(R.string.link_successful_snackbar),
+                                duration = SnackbarDuration.Long
+                            )
+
+                        }
+                    }
+                }
+            )
+        }
+        // ---  show the unlink confirmation dialog ---
+        if (showUnlinkConfirmDialog) {
+            AlertDialog(
+                onDismissRequest = { showUnlinkConfirmDialog = false },
+                title = { Text(stringResource(R.string.unlink_artist_dialog_title)) },
+                text = { Text(stringResource(R.string.artist_unlink_confirm_message)) },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showUnlinkConfirmDialog = false
+                            // Unlink and navigate back ---\
+                            viewModel.unlinkArtist {
+                                navController.popBackStack()
+                            }
+                        }
+                    ) {
+                        Text(stringResource(R.string.unlink_artist_dialog_confirm_button))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showUnlinkConfirmDialog = false }) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
+                }
+            )
+        }
+
 
         TopAppBar(
             title = { if (!transparentAppBar) Text(artistPage?.artist?.title.orEmpty()) },
@@ -631,5 +761,147 @@ fun ArtistScreen(
                     .align(Alignment.BottomCenter)
             )
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ManualLinkDialog(
+    artistName: String,
+    viewModel: ArtistViewModel,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var searchQuery by rememberSaveable(artistName) { mutableStateOf(artistName) }
+    val searchResults = remember { mutableStateListOf<ArtistItem>() }
+    var selectedArtist by remember { mutableStateOf<ArtistItem?>(null) }
+    val focusRequester = remember { FocusRequester() }
+
+    fun doSearch() {
+        searchResults.clear()
+        selectedArtist = null
+        viewModel.searchArtists(searchQuery) { results ->
+            searchResults.addAll(results)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.link_artist_dialog_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.link_artist_dialog_text))
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = { Text(stringResource(R.string.link_artist_search_query_label)) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { doSearch() }),
+                    trailingIcon = {
+                        IconButton(onClick = { doSearch() }) {
+                            Icon(Icons.Rounded.Search, contentDescription = "Search")
+                        }
+                    }
+                )
+
+                val resultsLazyListState = rememberLazyListState()
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp)
+                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
+                ) {
+                    LazyColumn(
+                        state = resultsLazyListState,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (searchResults.isEmpty()) {
+                            item {
+                                Text(
+                                    text = stringResource(R.string.search_results_title),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(16.dp)
+                                )
+                            }
+                        } else {
+                            // Using the explicit Items constructor to help the compiler identify ArtistItem
+                            items(
+                                items = searchResults,
+                                key = { it.id }
+                            ) { artistItem: ArtistItem ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { selectedArtist = artistItem }
+                                        .background(
+                                            if (selectedArtist == artistItem) MaterialTheme.colorScheme.primaryContainer
+                                            else Color.Transparent
+                                        )
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Artist Thumbnail
+                                    AsyncImage(
+                                        model = artistItem.thumbnail?.resize(120, 120),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .clip(RoundedCornerShape(24.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    )
+
+                                    Spacer(Modifier.width(16.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = artistItem.title,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+
+                                        // Subscriber count (if provided by YouTube search)
+                                        val subscribersText = artistItem.subscribers
+                                        if (!subscribersText.isNullOrBlank()) {
+                                            Text(
+                                                text = subscribersText,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    LazyColumnScrollbar(state = resultsLazyListState)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { selectedArtist?.id?.let { onConfirm(it) } },
+                enabled = selectedArtist != null
+            ) {
+                Text(stringResource(R.string.link_artist_button_label))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        }
+    )
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        doSearch()
     }
 }

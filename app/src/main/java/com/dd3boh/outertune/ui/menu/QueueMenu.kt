@@ -7,9 +7,9 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -31,7 +31,6 @@ fun QueueMenu(
     onDismiss: () -> Unit,
 ) {
     val playerConnection = LocalPlayerConnection.current ?: return
-    val queueBoard by playerConnection.queueBoard.collectAsState()
 
     if (mq == null) {
         onDismiss()
@@ -76,6 +75,13 @@ fun QueueMenu(
             showChoosePlaylistDialog = true
         }
         GridMenuItem(
+            icon = Icons.Rounded.Download,
+            title = R.string.download_all_songs
+        ) {
+            playerConnection.downloadQueueAsPlaylist(mq)
+            onDismiss()
+        }
+        GridMenuItem(
             icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
             title = R.string.edit
         ) {
@@ -101,14 +107,14 @@ fun QueueMenu(
     if (showChooseQueueDialog) {
         AddToQueueDialog(
             onAdd = { queueName ->
-                val q = queueBoard.addQueue(
+                val q = playerConnection.service.queueBoard.addQueue(
                     queueName,
                     songs,
                     forceInsert = true,
                     delta = false
                 )
                 q?.let {
-                    queueBoard.setCurrQueue(it)
+                    playerConnection.service.queueBoard.setCurrQueue(it)
                 }
             },
             onDismiss = {

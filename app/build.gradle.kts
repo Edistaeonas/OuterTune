@@ -29,9 +29,15 @@ android {
         applicationId = "com.dd3boh.outertune"
         minSdk = 24
         targetSdk = 36
-        versionCode = 71
-        versionName = "0.10.2-b1"
+        versionCode = 70
+        versionName = "0.12.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        externalNativeBuild {
+            cmake {
+                cppFlags.addAll(listOf("-std=c++17", "-fexceptions", "-frtti"))
+                arguments.add("-DANDROID_STL=c++_shared")
+            }
+        }
     }
 
     signingConfigs {
@@ -59,10 +65,11 @@ android {
             isShrinkResources = true
             isCrunchPngs = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("ot_release")
+            signingConfig = signingConfigs.getByName("debug")
         }
         debug {
             applicationIdSuffix = ".debug"
+            //isMinifyEnabled = false // to avoid warning "BuildType 'debug' is both debuggable and has 'isMinifyEnabled' set to true. All code optimizations and obfuscation are disabled for debuggable builds.
         }
 
         // userdebug is release builds without minify
@@ -70,7 +77,7 @@ android {
             initWith(getByName("release"))
             isMinifyEnabled = false
             isShrinkResources = false
-//            isDebuggable = true
+            isDebuggable = false
             isProfileable = true
             matchingFallbacks += listOf("release")
         }
@@ -87,7 +94,8 @@ android {
             isEnable = true
             reset()
 
-            include("x86_64", "x86", "armeabi-v7a", "arm64-v8a")
+            //include("x86_64", "x86", "armeabi-v7a", "arm64-v8a")
+            include("arm64-v8a")
             isUniversalApk = true
         }
     }
@@ -119,8 +127,8 @@ android {
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
+        //sourceCompatibility = JavaVersion.VERSION_21
+        //targetCompatibility = JavaVersion.VERSION_21
     }
     kotlin {
         jvmToolchain(21)
@@ -160,10 +168,10 @@ android {
             // Define the strict mode, will fail if the project uses licenses not allowed
             strictMode = com.mikepenz.aboutlibraries.plugin.StrictMode.FAIL
             // Allowed set of licenses, this project will be able to use without build failure
-            allowedLicenses.addAll("Apache-2.0", "BSD-3-Clause", "GNU LESSER GENERAL PUBLIC LICENSE, Version 2.1", "GNU GENERAL PUBLIC LICENSE, Version 3", "GPL-3.0-only", "EPL-2.0", "MIT", "MPL-2.0", "Public Domain")
+            allowedLicenses.addAll("Apache-2.0", "BSD-3-Clause", "GNU LESSER GENERAL PUBLIC LICENSE, Version 2.1", "GPL-3.0-only", "EPL-2.0", "MIT", "MPL-2.0", "Public Domain")
 
             // Full license text for license IDs mentioned here will be included, even if no detected dependency uses them.
-             additionalLicenses.addAll("apache_2_0", "gpl_2_1") // taglib, ffMpeg in ffMetadataEx
+            additionalLicenses.addAll("apache_2_0", "gpl_2_1") // taglib, ffMpeg in ffMetadataEx
         }
 
         library {
@@ -200,6 +208,7 @@ ksp {
 
 dependencies {
     implementation(libs.guava)
+    implementation("com.google.j2objc:j2objc-annotations:2.8")
     implementation(libs.coroutines.guava)
     implementation(libs.concurrent.futures)
 
@@ -264,6 +273,8 @@ dependencies {
     // sdk24 support
     // Support for N is officially unsupported even it the app should still work. Leave this outside of the version catalog.
     implementation("androidx.webkit:webkit:1.14.0")
+
+    implementation("com.google.accompanist:accompanist-swiperefresh:0.34.0")
 }
 
 afterEvaluate {

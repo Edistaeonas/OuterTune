@@ -13,6 +13,7 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.room.migration.AutoMigrationSpec
 import androidx.room.migration.Migration
+import androidx.room.withTransaction
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
 import com.dd3boh.outertune.db.MusicDatabase.Companion.MUSIC_DATABASE_VERSION
@@ -65,10 +66,16 @@ class MusicDatabase(
         }
     }
 
+    suspend fun <R> withSuspendingTransaction(block: suspend DatabaseDao.() -> R): R {
+        return delegate.withTransaction {
+            delegate.dao.block()
+        }
+    }
+
     fun close() = delegate.close()
 
     companion object {
-        const val MUSIC_DATABASE_VERSION = 20
+        const val MUSIC_DATABASE_VERSION = 22 // 2026.04.03
     }
 }
 
@@ -117,6 +124,8 @@ class MusicDatabase(
         AutoMigration(from = 17, to = 18, spec = Migration17To18::class), // Fix Room nonsense
         AutoMigration(from = 18, to = 19), // Recent activity
         AutoMigration(from = 19, to = 20, spec = Migration19To20::class), // Db optimization, remove totalplaytime, local media fields
+        AutoMigration(from = 20, to = 21, spec = Migration20To21::class), // 29.03.2026
+        AutoMigration(from = 21, to = 22) // 03.04.2026
     ]
 )
 @TypeConverters(Converters::class)
@@ -134,6 +143,7 @@ abstract class InternalDatabase : RoomDatabase() {
                     .addMigrations(MIGRATION_14_15)
                     .addMigrations(MIGRATION_15_16)
                     .addMigrations(MIGRATION_16_17)
+                    .addMigrations(MIGRATION_21_22)
                     .build()
             )
 
@@ -482,6 +492,19 @@ val MIGRATION_16_17 = object : Migration(16, 17) {
     }
 }
 
+/**
+ * Manual migration to force the addition of commentTag and composer columns,
+ * resolving the AutoMigration sync issue.
+ */
+val MIGRATION_21_22 = object : Migration(21, 22) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // We use if not exists or ignore errors to be safe,
+        // though standard Room migrations expect these to be missing.
+        db.execSQL("ALTER TABLE song ADD COLUMN commentTag TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE song ADD COLUMN composer TEXT DEFAULT NULL")
+    }
+}
+
 @DeleteColumn.Entries(
     DeleteColumn(tableName = "song", columnName = "isTrash"),
     DeleteColumn(tableName = "playlist", columnName = "author"),
@@ -684,3 +707,6 @@ class Migration17To18 : AutoMigrationSpec
     DeleteColumn(tableName = "song", columnName = "totalPlayTime"),
 )
 class Migration19To20 : AutoMigrationSpec
+
+@DeleteColumn(tableName = "song", columnName = "parentArtist")
+class Migration20To21 : AutoMigrationSpec

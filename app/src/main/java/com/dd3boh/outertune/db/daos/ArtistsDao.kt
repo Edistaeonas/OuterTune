@@ -17,7 +17,7 @@ import com.dd3boh.outertune.db.entities.Artist
 import com.dd3boh.outertune.db.entities.ArtistEntity
 import com.dd3boh.outertune.db.entities.Song
 import com.dd3boh.outertune.db.entities.SongArtistMap
-import com.dd3boh.outertune.extensions.reversed
+import com.dd3boh.outertune.db.entities.SongEntity
 import com.dd3boh.outertune.ui.utils.resize
 import com.zionhuang.innertube.pages.ArtistPage
 import kotlinx.coroutines.flow.Flow
@@ -48,11 +48,14 @@ interface ArtistsDao {
     @Query("SELECT * FROM artist WHERE id = :id")
     fun artistById(id: String): ArtistEntity?
 
-    @Query("SELECT * FROM artist WHERE name = :name")
+    @Query("SELECT * FROM artist WHERE name = :name  COLLATE NOCASE")
     fun artistByName(name: String): ArtistEntity?
 
-    @Query("SELECT * FROM artist WHERE isLocal = 1 AND name LIKE '%' || :name || '%'")
-    fun localArtistsByNameFuzzy(name: String): List<ArtistEntity>
+    @Query("SELECT * FROM artist WHERE name LIKE '%' || :name || '%'")
+    fun artistsByNameFuzzy(name: String): List<ArtistEntity>
+
+    @Query("SELECT * FROM artist ORDER BY name ASC")
+    fun allArtistsRaw(): List<ArtistEntity>
 
     @Query("""
         SELECT 
@@ -104,6 +107,9 @@ interface ArtistsDao {
     @Query("SELECT * FROM artist WHERE isLocal = 1")
     fun allLocalArtists(): List<ArtistEntity>
 
+    @Query("SELECT COUNT(*) FROM artist WHERE isLocal = 1 AND (channelId IS NULL OR channelId = '')")
+    fun getUnlinkedLocalArtistCount(): Int
+
     @Query("""
         SELECT 
             artist.*,
@@ -127,14 +133,47 @@ interface ArtistsDao {
     """)
     fun mostPlayedArtists(fromYear: Int, fromMonth: Int, limit: Int = 6): Flow<List<Artist>>
 
-    @RawQuery(observedEntities = [ArtistEntity::class])
+    @Transaction
+    @Query("""
+        SELECT
+            artist.*,
+            COUNT(song.id) AS songCount,
+            SUM(CASE WHEN song.dateDownload IS NOT NULL THEN 1 ELSE 0 END) AS downloadCount
+        FROM artist
+            LEFT JOIN song_artist_map sam ON artist.id = sam.artistId
+            LEFT JOIN song ON sam.songId = song.id
+        WHERE artist.bookmarkedAt IS NOT NULL
+        GROUP BY artist.id
+        ORDER BY RANDOM()
+        LIMIT :limit
+    """)
+    fun getRandomArtists(limit: Int): List<Artist>
+
+    @RawQuery(observedEntities = [ArtistEntity::class, SongArtistMap::class, SongEntity::class])
     fun _getArtists(query: SupportSQLiteQuery): Flow<List<Artist>>
 
     fun artists(filter: ArtistFilter, sortType: ArtistSortType, descending: Boolean, localOnly: Boolean? = null): Flow<List<Artist>> {
+        val effectiveDescending = when (sortType) {
+            ArtistSortType.NAME -> !descending
+            else -> descending
+        }
+            val sortOrder = if (effectiveDescending) "DESC" else "ASC"
+
+
+        // --- DEFINITIVE FIX FOR YT LINK STATUS: Grouping Auto + Manual Linked together ---
         val orderBy = when (sortType) {
-            ArtistSortType.CREATE_DATE -> "artist.rowId ASC"
-            ArtistSortType.NAME -> "artist.name COLLATE NOCASE ASC"
-            ArtistSortType.SONG_COUNT -> "songCount ASC"
+            ArtistSortType.CREATE_DATE -> "artist.rowId $sortOrder"
+            ArtistSortType.NAME -> "artist.name COLLATE NOCASE $sortOrder"
+            ArtistSortType.SONG_COUNT -> "songCount $sortOrder"
+            ArtistSortType.YT_LINK_STATUS ->
+                // Linked Logic:
+                // A song is LINKED if: it has a channelId OR its id starts with 'UC' (Auto-linked)
+                // We assign 0 to Linked, 1 to Unlinked.
+                // ASC (0, 1) puts ALL Linked on top. DESC (1, 0) puts Unlinked on top.
+                """(CASE 
+                    WHEN (artist.channelId IS NOT NULL AND artist.channelId != '') 
+                      OR (artist.id LIKE 'UC%') 
+                    THEN 0 ELSE 1 END) $sortOrder"""
         }
 
         val where = when (filter) {
@@ -144,9 +183,10 @@ interface ArtistsDao {
         } + if (localOnly == null) {
             ""
         } else if (localOnly) {
-            "artist.isLocal = 1"
+            // Keep artists in "Local" view if they have at least one local song
+            " AND song.isLocal = 1"
         } else {
-            "artist.isLocal = 0"
+            " AND artist.isLocal = 0"
         }
 
         val having = when (filter) {
@@ -162,18 +202,17 @@ interface ArtistsDao {
             FROM artist
                 LEFT JOIN song_artist_map sam ON artist.id = sam.artistId
                 LEFT JOIN song ON sam.songId = song.id
-            WHERE $where
+            WHERE ${where.trimStart(' ', 'A', 'N', 'D')}
             GROUP BY artist.id
             HAVING songCount >= 0 $having
             ORDER BY $orderBy
         """)
 
         return _getArtists(query).map { artists ->
-            artists
-                .filter { it.artist.isYouTubeArtist || it.artist.isLocal } // TODO: add ui to filter by local or remote or something idk
-                .reversed(descending)
+            artists.filter { it.artist.isYouTubeArtist || it.artist.isLocal }
         }
     }
+
 
     fun artistsInLibraryAsc() = artists(ArtistFilter.LIBRARY, ArtistSortType.CREATE_DATE, false)
     fun artistsBookmarkedAsc() = artists(ArtistFilter.LIKED, ArtistSortType.CREATE_DATE, false)
@@ -193,6 +232,20 @@ interface ArtistsDao {
         ORDER BY artist.name ASC
     """)
     fun localArtistsByName(): List<Artist>
+
+    @Transaction
+    @Query("""
+        SELECT
+            artist.*,
+            COUNT(song.id) AS songCount,
+            SUM(CASE WHEN song.dateDownload IS NOT NULL THEN 1 ELSE 0 END) AS downloadCount
+        FROM artist
+            LEFT JOIN song_artist_map sam ON artist.id = sam.artistId
+            LEFT JOIN song ON sam.songId = song.id AND song.inLibrary IS NOT NULL
+        WHERE artist.id IN (:ids)
+        GROUP BY artist.id
+    """)
+    suspend fun artistsByIds(ids: List<String>): List<Artist>
     // endregion
 
     // region Artist Songs Sort
@@ -208,7 +261,7 @@ interface ArtistsDao {
         when (sortType) {
             ArtistSongSortType.CREATE_DATE -> artistSongsByCreateDateAsc(artistId)
             ArtistSongSortType.NAME -> artistSongsByNameAsc(artistId)
-        }.map { it.reversed(descending) }
+        }.map { it.reversed() }
     // endregion
     // endregion
 
@@ -238,13 +291,24 @@ interface ArtistsDao {
     @Transaction
     @Query("UPDATE song_artist_map SET artistId = :newId WHERE artistId = :oldId")
     fun updateSongArtistMap(oldId: String, newId: String)
+
+    @Query("SELECT * FROM song_artist_map WHERE artistId = :artistId")
+    fun getSongArtistMapsByArtist(artistId: String): List<SongArtistMap>
+
+    @Delete
+    fun delete(maps: List<SongArtistMap>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    fun insert(maps: List<SongArtistMap>)
+
+
     // endregion
 
     // region Deletes
     @Delete
     fun delete(artist: ArtistEntity)
 
-   @Query("""
+    @Query("""
         DELETE FROM Artist
         WHERE NOT EXISTS (
             SELECT 1

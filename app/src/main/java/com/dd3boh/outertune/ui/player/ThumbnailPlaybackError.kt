@@ -13,6 +13,7 @@ import android.annotation.SuppressLint
 import android.content.ClipData
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
@@ -62,24 +64,30 @@ fun ThumbnailPlaybackError(
 ) {
     val clipboardManager = LocalClipboard.current
 
-    val playerBackground by rememberEnumPreference(
-        key = PlayerBackgroundStyleKey,
-        defaultValue = DEFAULT_PLAYER_BACKGROUND
-    )
-    val darkTheme by rememberEnumPreference(DarkModeKey, defaultValue = DarkMode.AUTO)
-    val isSystemInDarkTheme = isSystemInDarkTheme()
-    val useDarkTheme = remember(darkTheme, isSystemInDarkTheme) {
-        if (darkTheme == DarkMode.AUTO) isSystemInDarkTheme else darkTheme == DarkMode.ON
-    }
+//    val playerBackground by rememberEnumPreference(
+//        key = PlayerBackgroundStyleKey,
+//        defaultValue = DEFAULT_PLAYER_BACKGROUND
+//    )
+//    val darkTheme by rememberEnumPreference(DarkModeKey, defaultValue = DarkMode.AUTO)
+//    val isSystemInDarkTheme = isSystemInDarkTheme()
+//    val useDarkTheme = remember(darkTheme, isSystemInDarkTheme) {
+//        if (darkTheme == DarkMode.AUTO) isSystemInDarkTheme else darkTheme == DarkMode.ON
+//    }
+//
+//    val textColor = when (playerBackground) {
+//        PlayerBackgroundStyle.FOLLOW_THEME -> MaterialTheme.colorScheme.secondary
+//        else ->
+//            if (useDarkTheme)
+//                MaterialTheme.colorScheme.onSurface
+//            else
+//                MaterialTheme.colorScheme.onPrimary
+//    }
+//
+//    var showStackTrace by remember { mutableStateOf(false) }
 
-    val textColor = when (playerBackground) {
-        PlayerBackgroundStyle.FOLLOW_THEME -> MaterialTheme.colorScheme.secondary
-        else ->
-            if (useDarkTheme)
-                MaterialTheme.colorScheme.onSurface
-            else
-                MaterialTheme.colorScheme.onPrimary
-    }
+    // FIX: Force high-contrast colors instead of following theme/background
+    val errorColor = Color(0xFFFF0000) // Vivid Red
+    val backgroundColor = Color.Black
 
     var showStackTrace by remember { mutableStateOf(false) }
 
@@ -88,6 +96,7 @@ fun ThumbnailPlaybackError(
         verticalArrangement = Arrangement.Center,
         modifier = modifier
             .fillMaxSize()
+            .background(backgroundColor)
             .padding(24.dp)
             .fadingEdge(vertical = 64.dp)
             .verticalScroll(rememberScrollState()),
@@ -100,7 +109,7 @@ fun ThumbnailPlaybackError(
             Icon(
                 imageVector = Icons.Rounded.Info,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.error
+                tint = errorColor // not MaterialTheme.colorScheme.error
             )
             Text(
                 text = "${error.message} (${error.errorCode}): ${
@@ -108,7 +117,7 @@ fun ThumbnailPlaybackError(
                         R.string.error_unknown
                     )
                 }",
-                color = textColor,
+                color = errorColor,
                 style = MaterialTheme.typography.bodyMedium
             )
         }
@@ -118,7 +127,7 @@ fun ThumbnailPlaybackError(
             ) {
                 Text(
                     text = stringResource(R.string.tap_show_more),
-                    color = textColor,
+                    color = errorColor,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -126,7 +135,7 @@ fun ThumbnailPlaybackError(
         AnimatedVisibility(showStackTrace) {
             Text(
                 text = error.stackTraceToString(),
-                color = textColor,
+                color = errorColor,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier
                     .padding(top = 64.dp)

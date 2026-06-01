@@ -70,8 +70,6 @@
 -dontwarn javax.script.**
 -keep class jdk.dynalink.** { *; }
 -dontwarn jdk.dynalink.**
-# Rules for jsoup. See https://github.com/jhy/jsoup/issues/2459
--dontwarn com.google.re2j.**
 
 ## Logging (does not affect Timber)
 -assumenosideeffects class android.util.Log {

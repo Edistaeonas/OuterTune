@@ -4,6 +4,7 @@ import android.content.Intent
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
@@ -15,6 +16,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -25,8 +28,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.media3.exoplayer.offline.Download
 import androidx.media3.exoplayer.offline.DownloadService
@@ -35,6 +40,7 @@ import com.dd3boh.outertune.LocalDatabase
 import com.dd3boh.outertune.LocalDownloadUtil
 import com.dd3boh.outertune.LocalPlayerConnection
 import com.dd3boh.outertune.R
+import com.dd3boh.outertune.db.entities.PlaylistEntity
 import com.dd3boh.outertune.extensions.toMediaItem
 import com.dd3boh.outertune.models.toMediaMetadata
 import com.dd3boh.outertune.playback.ExoDownloadService
@@ -44,6 +50,7 @@ import com.dd3boh.outertune.ui.component.items.YouTubeListItem
 import com.dd3boh.outertune.ui.dialog.AddToPlaylistDialog
 import com.dd3boh.outertune.ui.dialog.AddToQueueDialog
 import com.dd3boh.outertune.ui.dialog.ArtistDialog
+import com.dd3boh.outertune.ui.dialog.DefaultDialog
 import com.dd3boh.outertune.utils.getDownloadState
 import com.dd3boh.outertune.utils.reportException
 import com.zionhuang.innertube.YouTube
@@ -59,7 +66,6 @@ fun YouTubeAlbumMenu(
     val database = LocalDatabase.current
     val downloadUtil = LocalDownloadUtil.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val queueBoard by playerConnection.queueBoard.collectAsState()
     val album by database.albumWithSongs(albumItem.id).collectAsState(initial = null)
     val coroutineScope = rememberCoroutineScope()
 
@@ -73,6 +79,8 @@ fun YouTubeAlbumMenu(
     var showSelectArtistDialog by rememberSaveable {
         mutableStateOf(false)
     }
+    var showRemoveDownloadDialog by remember {
+        mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         database.album(albumItem.id).collect { album ->
@@ -159,19 +167,34 @@ fun YouTubeAlbumMenu(
         }
         DownloadGridMenu(
             state = downloadState,
+//            onDownload = {
+//                val _songs = album?.songs?.map { it.toMediaMetadata() } ?: emptyList()
+//                downloadUtil.download(_songs)
+//            },
             onDownload = {
+                // FIX: Use Elvis operator to ensure the list is non-nullable
                 val _songs = album?.songs?.map { it.toMediaMetadata() } ?: emptyList()
-                downloadUtil.download(_songs)
+                val playlistEntity = PlaylistEntity(
+                    id = album?.album!!.id, // for AlbumScreen/AlbumMenu use appropriate album id variable
+                    name = album?.album!!.title,
+                    browseId = album?.album!!.id,
+                    thumbnailUrl = album?.album!!.thumbnailUrl,
+                    isLocal = true,
+                    //bookmarkedAt = java.time.LocalDateTime.now() that's for playlist view
+                )
+                downloadUtil.downloadCollection(_songs, playlistEntity)
             },
             onRemoveDownload = {
-                album?.songs?.forEach { song ->
-                    DownloadService.sendRemoveDownload(
-                        context,
-                        ExoDownloadService::class.java,
-                        song.id,
-                        false
-                    )
-                }
+                // This will loop through all songs mapped to this album ID and delete them
+                showRemoveDownloadDialog = true
+//                album?.songs?.forEach { song ->
+//                    DownloadService.sendRemoveDownload(
+//                        context,
+//                        ExoDownloadService::class.java,
+//                        song.id,
+//                        false
+//                    )
+//                }
             }
         )
         albumItem.artists?.let { artists ->
@@ -211,12 +234,12 @@ fun YouTubeAlbumMenu(
         AddToQueueDialog(
             onAdd = { queueName ->
                 album?.songs?.let { song ->
-                    val q = queueBoard.addQueue(
+                    val q = playerConnection.service.queueBoard.addQueue(
                         queueName, song.map { it.toMediaMetadata() },
                         forceInsert = true, delta = false
                     )
                     q?.let {
-                        queueBoard.setCurrQueue(it)
+                        playerConnection.service.queueBoard.setCurrQueue(it)
                     }
                 }
             },
@@ -247,6 +270,33 @@ fun YouTubeAlbumMenu(
             navController = navController,
             artists = album?.artists.orEmpty(),
             onDismiss = { showSelectArtistDialog = false }
+        )
+    }
+
+    if (showRemoveDownloadDialog) {
+        DefaultDialog(onDismiss = { showRemoveDownloadDialog = false },
+            content = {
+                Text(
+                    text = stringResource(R.string.remove_download_playlist_confirm, album!!.album.title),
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(horizontal = 18.dp)
+                )
+            },
+            buttons = {
+                TextButton(onClick = { showRemoveDownloadDialog = false }) {
+                    Text(text = stringResource(android.R.string.cancel))
+                }
+                TextButton(
+                    onClick = {
+                        showRemoveDownloadDialog = false
+                        // Recursive deletion using Album ID as Playlist ID
+                        downloadUtil.removeCollectionDownload(album!!.album.id)
+                        onDismiss()
+                    }
+                ) {
+                    Text(text = stringResource(android.R.string.ok))
+                }
+            }
         )
     }
 }

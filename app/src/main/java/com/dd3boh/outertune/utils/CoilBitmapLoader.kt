@@ -16,6 +16,7 @@ import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.scale
 import androidx.media3.common.util.BitmapLoader
@@ -92,24 +93,38 @@ class CoilBitmapLoader @Inject constructor(
         return try {
             if (data.path?.startsWith("/storage/") == true) {
                 val mData = MediaMetadataRetriever()
-                var image: Bitmap = try {
+                val image: Bitmap = try {
                     mData.setDataSource(data.path)
                     val art = mData.embeddedPicture
-                    BitmapFactory.decodeByteArray(art, 0, art!!.size)
+                    if (art != null) {
+                        val decoded = BitmapFactory.decodeByteArray(art, 0, art.size)
+                        if (decoded == null) {
+                            Log.e("CoilBitmapLoader", "BitmapFactory failed to decode artwork bytes (format error?) for: ${data.path}")
+                        }
+                        decoded
+                    } else {
+                        Log.w("CoilBitmapLoader", "MediaMetadataRetriever found NO embedded picture bytes for: ${data.path}")
+                        null
+                    }
                 } catch (e: Exception) {
-                    drawPlaceholder(context)
+                    Log.e("CoilBitmapLoader", "Exception while retrieving artwork from: ${data.path}", e)
+                    null
                 } ?: drawPlaceholder(context)
 
+                // Always release the retriever
+                try { mData.release() } catch (e: Exception) { /* ignore */ }
+
+                var processedImage = image
                 if (data.x + data.y > 0) {
                     var realX = data.x
                     var realY = data.y
 
                     // scale maintaining aspect ratio
-                    if (image.width != image.height) {
+                    if (processedImage.width != processedImage.height) {
                         val frameW = data.x
                         val frameH = data.y
-                        val imgW = image.width
-                        val imgH = image.height
+                        val imgW = processedImage.width
+                        val imgH = processedImage.height
 
                         val scaleX = frameW.toFloat() / imgW
                         val scaleY = frameH.toFloat() / imgH
@@ -119,11 +134,11 @@ class CoilBitmapLoader @Inject constructor(
                         realY = (imgH * scale).toInt()
                     }
 
-                    image = image.scale(realX, realY)
+                    processedImage = processedImage.scale(realX, realY)
                 }
 
                 ImageFetchResult(
-                    image = image.asImage(),
+                    image = processedImage.asImage(),
                     isSampled = false,
                     dataSource = DataSource.DISK
                 )
@@ -139,7 +154,6 @@ class CoilBitmapLoader @Inject constructor(
             )
         }
     }
-
     companion object {
         // TODO: re eval dimens after a few months
         /**

@@ -1,5 +1,6 @@
 package com.dd3boh.outertune.db
 
+import androidx.compose.ui.geometry.isEmpty
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
@@ -14,6 +15,8 @@ import com.dd3boh.outertune.db.daos.ArtistsDao
 import com.dd3boh.outertune.db.daos.PlaylistsDao
 import com.dd3boh.outertune.db.daos.QueueDao
 import com.dd3boh.outertune.db.daos.SongsDao
+import com.dd3boh.outertune.db.entities.Album
+import com.dd3boh.outertune.db.entities.Artist
 import com.dd3boh.outertune.db.entities.AlbumArtistMap
 import com.dd3boh.outertune.db.entities.AlbumEntity
 import com.dd3boh.outertune.db.entities.ArtistEntity
@@ -44,6 +47,11 @@ import com.zionhuang.innertube.models.SongItem
 import com.zionhuang.innertube.models.YTItem
 import com.zionhuang.innertube.pages.AlbumPage
 import kotlinx.coroutines.flow.Flow
+import kotlin.text.any
+import kotlin.text.find
+import kotlin.text.lowercase
+
+data class SongIdentity(val artistName: String?, val title: String)
 
 @Dao
 interface DatabaseDao : SongsDao, AlbumsDao, ArtistsDao, PlaylistsDao, QueueDao {
@@ -77,6 +85,131 @@ interface DatabaseDao : SongsDao, AlbumsDao, ArtistsDao, PlaylistsDao, QueueDao 
         LIMIT 100
     """)
     fun quickPicks(now: Long = System.currentTimeMillis()): Flow<List<Song>>
+
+
+
+    @Query("""
+        SELECT artist.name as artistName, song.title as title 
+        FROM event 
+        JOIN song ON event.songId = song.id
+        LEFT JOIN song_artist_map ON song.id = song_artist_map.songId
+        LEFT JOIN artist ON song_artist_map.artistId = artist.id
+        WHERE song_artist_map.position = 0 OR song_artist_map.position IS NULL
+        ORDER BY event.timestamp DESC 
+        LIMIT :limit
+    """)
+    fun getRecentSongIdentities(limit: Int): List<SongIdentity>
+
+    @Query("""
+        SELECT * FROM song
+        WHERE isLocal = 1
+        AND id NOT IN (
+            SELECT songId FROM song_artist_map WHERE artistId NOT IN (SELECT id FROM artist)
+        )
+        AND id NOT IN (
+            SELECT songId FROM song_album_map WHERE albumId NOT IN (SELECT id FROM album)
+        )
+        ORDER BY RANDOM()
+        LIMIT :limit
+    """)
+    abstract fun getRandomLocalSongEntities(limit: Int): List<SongEntity>
+
+    @Transaction
+    @Query("SELECT * FROM song WHERE dateDownload IS NOT NULL AND isLocal = 0")
+    abstract fun getAllDownloadedSongsDiagnostic(): List<Song>
+
+    @Query("""
+        SELECT * FROM song
+        WHERE dateDownload IS NOT NULL
+        AND isLocal = 0 
+        AND id NOT IN (
+            SELECT songId FROM song_artist_map WHERE artistId NOT IN (SELECT id FROM artist)
+        )
+        AND id NOT IN (
+            SELECT songId FROM song_album_map WHERE albumId NOT IN (SELECT id FROM album)
+        )
+        ORDER BY RANDOM()
+        LIMIT :limit
+    """)
+    abstract fun getRandomDownloadedSongEntities(limit: Int): List<SongEntity>
+
+    @Query("SELECT COUNT(*) FROM song WHERE dateDownload IS NOT NULL AND id NOT IN (SELECT songId FROM song_artist_map)")
+    abstract fun getOrphanedDownloadCount(): Int
+
+    @Query("""
+        SELECT * FROM song
+        WHERE id NOT IN (
+            SELECT songId FROM song_artist_map WHERE artistId NOT IN (SELECT id FROM artist)
+        )
+        AND id NOT IN (
+            SELECT songId FROM song_album_map WHERE albumId NOT IN (SELECT id FROM album)
+        )
+        ORDER BY RANDOM()
+        LIMIT :limit
+    """)
+    abstract fun getRandomSongEntities(limit: Int): List<SongEntity>
+
+    @Query("""
+        SELECT * FROM song
+        WHERE liked = 1        AND id NOT IN (
+            SELECT songId FROM song_artist_map WHERE artistId NOT IN (SELECT id FROM artist)
+        )
+        AND id NOT IN (
+            SELECT songId FROM song_album_map WHERE albumId NOT IN (SELECT id FROM album)
+        )
+        ORDER BY RANDOM()
+        LIMIT :limit
+    """)
+    abstract fun getRandomLikedSongEntities(limit: Int): List<SongEntity>
+
+    @Transaction
+    @Query("""
+        SELECT *, (
+            SELECT COUNT(songId) FROM song_album_map
+            INNER JOIN song ON song.id = song_album_map.songId
+            WHERE song_album_map.albumId = album.id AND song.dateDownload IS NOT NULL
+        ) AS downloadCount
+        FROM album
+        WHERE bookmarkedAt IS NOT NULL
+        ORDER BY RANDOM()
+        LIMIT :limit
+    """)
+    abstract fun getRandomLikedAlbums(limit: Int): List<Album>
+
+    @Query("""
+        SELECT * FROM song
+        WHERE id IN (SELECT songId FROM song_album_map WHERE albumId = :albumId)
+        ORDER BY RANDOM()
+        LIMIT 1
+    """)
+    abstract fun getRandomSongFromAlbum(albumId: String): SongEntity?
+
+    @Transaction
+    @Query("""
+        SELECT artist.*,
+            (SELECT COUNT(songId) FROM song_artist_map WHERE artistId = artist.id) AS songCount,
+            (SELECT COUNT(songId) FROM song_artist_map
+                INNER JOIN song ON song.id = song_artist_map.songId
+                WHERE song_artist_map.artistId = artist.id AND song.dateDownload IS NOT NULL
+            ) AS downloadCount
+        FROM artist
+        WHERE artist.name IN (
+            SELECT name FROM artist WHERE bookmarkedAt IS NOT NULL
+            UNION
+            SELECT T2.name FROM song_artist_map AS T1 JOIN artist AS T2 ON T1.artistId = T2.id WHERE T1.songId IN (SELECT id FROM song WHERE isLocal = 1)
+            UNION
+            SELECT T2.name FROM song_artist_map AS T1 JOIN artist AS T2 ON T1.artistId = T2.id WHERE T1.songId IN (SELECT id FROM song WHERE liked = 1)
+            UNION
+            SELECT T2.name FROM album_artist_map AS T1 JOIN artist AS T2 ON T1.artistId = T2.id WHERE T1.albumId IN (SELECT id FROM album WHERE bookmarkedAt IS NOT NULL)
+        )
+        GROUP BY artist.name
+    """)
+    fun getMasterArtistList(): List<Artist>
+
+    @Transaction
+    @Query("SELECT * FROM song WHERE isLocal = 1")
+    fun allLocalSongsFlow(): Flow<List<Song>>
+
 
     @Query("SELECT * FROM format WHERE id = :id")
     fun format(id: String?): Flow<FormatEntity?>
@@ -128,12 +261,15 @@ interface DatabaseDao : SongsDao, AlbumsDao, ArtistsDao, PlaylistsDao, QueueDao 
     @Query("SELECT * FROM genre WHERE title = :name")
     fun genreByName(name: String): GenreEntity?
 
-    @Query("SELECT * FROM genre WHERE isLocal = 1 AND title LIKE '%' || :query || '%' LIMIT :previewSize")
-    fun localGenreByNameFuzzy(query: String, previewSize: Int = Int.MAX_VALUE): List<GenreEntity>
+    @Query("SELECT * FROM genre WHERE title LIKE '%' || :query || '%' LIMIT :previewSize")
+    fun genreByNameFuzzy(query: String, previewSize: Int = Int.MAX_VALUE): List<GenreEntity>
 
     @Transaction
     @Query("UPDATE song_genre_map SET genreId = :newId WHERE genreId = :oldId")
     fun updateSongGenreMap(oldId: String, newId: String)
+
+    @Query("UPDATE song_artist_map SET artistId = :newId WHERE artistId = :oldId")
+    override fun updateSongArtistMap(oldId: String, newId: String)
 
     @Query(
         """
@@ -147,6 +283,7 @@ interface DatabaseDao : SongsDao, AlbumsDao, ArtistsDao, PlaylistsDao, QueueDao 
     """
     )
     fun safeDeleteGenre(genreId: String)
+
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     fun insert(genre: GenreEntity)
@@ -165,6 +302,9 @@ interface DatabaseDao : SongsDao, AlbumsDao, ArtistsDao, PlaylistsDao, QueueDao 
 
     @Transaction
     fun insert(mediaMetadata: MediaMetadata, block: (SongEntity) -> SongEntity = { it }) {
+        android.util.Log.d("DatabaseDao", "insert(MediaMetadata) triggered for: '${mediaMetadata.title}' (ID: ${mediaMetadata.id})")
+
+
         if (insert(mediaMetadata.toSongEntity().let(block)) == -1L) return
         mediaMetadata.artists.forEachIndexed { index, artist ->
             val artistId = artist.id ?: artistByName(artist.name)?.id ?: ArtistEntity.generateArtistId()
@@ -201,27 +341,86 @@ interface DatabaseDao : SongsDao, AlbumsDao, ArtistsDao, PlaylistsDao, QueueDao 
             )
         }
 
-        mediaMetadata.album?.let {
-            val album = albumsByName(it.title)
-            val albumId = album?.id ?: GenreEntity.generateGenreId()
-            upsert(
+//        mediaMetadata.album?.let {
+//            val album = albumsByName(it.title)
+//            // CORRECTED: Use the correct ID generator for albums. Used to be val albumId = album?.id ?: GenreEntity.generateGenreId()
+//            val albumId = album?.id ?: AlbumEntity.generateAlbumId()
+//            upsert(
+//                AlbumEntity(
+//                    id = albumId,
+//                    title = it.title,
+//                    thumbnailUrl = album?.thumbnailUrl?: mediaMetadata.thumbnailUrl,
+//                    songCount = 1,
+//                    duration = (album?.duration ?: 0) + mediaMetadata.duration,
+//                    isLocal = it.isLocal
+//                )
+//            )
+//            insert(
+//                SongAlbumMap(
+//                    songId = mediaMetadata.id,
+//                    albumId = albumId,
+//                    index = album?.songCount ?: 0
+//                )
+//            )
+//        }
+
+        mediaMetadata.album?.let { albumTag ->
+            val albums = albumsByName(albumTag.title)
+
+            // IMPROVED: Match by name AND Album Artist (if available) to ensure correct grouping.
+            val existingAlbum = albums.find { existing ->
+                if (mediaMetadata.albumArtist != null) {
+                    val existingArtists = getArtistsByAlbum(existing.id)
+                    existingArtists.any { it.name.equals(mediaMetadata.albumArtist, ignoreCase = true) }
+                } else {
+                    // Fallback to track artist matching if albumArtist is missing from metadata
+                    val songArtistNames = mediaMetadata.artists.map { a -> a.name.lowercase() }.toSet()
+                    val existingArtists = getArtistsByAlbum(existing.id)
+                    existingArtists.isEmpty() || existingArtists.any { a -> a.name.lowercase() in songArtistNames }
+                }
+            }
+
+            // Use existing ID if found, trust provided ID if it's stable (YT), otherwise generate new.
+            val isStableId = albumTag.id.startsWith("MPREb_") || albumTag.id.contains("_") || albumTag.id.length > 12
+            val albumId = existingAlbum?.id ?: if (isStableId) albumTag.id else AlbumEntity.generateAlbumId()
+
+            // Use insert(IGNORE) to prevent renaming existing albums
+            insert(
                 AlbumEntity(
                     id = albumId,
-                    title = it.title,
-                    thumbnailUrl = album?.thumbnailUrl?: mediaMetadata.thumbnailUrl,
-                    songCount = 1,
-                    duration = (album?.duration ?: 0) + mediaMetadata.duration,
-                    isLocal = it.isLocal
+                    title = albumTag.title,
+                    thumbnailUrl = existingAlbum?.thumbnailUrl ?: mediaMetadata.thumbnailUrl,
+                    songCount = (existingAlbum?.songCount ?: 0) + 1,
+                    duration = (existingAlbum?.duration ?: 0) + mediaMetadata.duration,
+                    isLocal = albumTag.isLocal
                 )
             )
+
             insert(
                 SongAlbumMap(
                     songId = mediaMetadata.id,
                     albumId = albumId,
-                    index = album?.songCount ?: 0
+                    index = mediaMetadata.trackNumber ?: (existingAlbum?.songCount ?: 0)
                 )
             )
+
+            // Link Album to its primary artists if it's a new record
+            if (existingAlbum == null) {
+                // If we have an explicit album artist, prioritize it for the album record links
+                if (mediaMetadata.albumArtist != null) {
+                    val artistId = artistByName(mediaMetadata.albumArtist)?.id ?: ArtistEntity.generateArtistId()
+                    insert(ArtistEntity(id = artistId, name = mediaMetadata.albumArtist, isLocal = albumTag.isLocal))
+                    insert(AlbumArtistMap(albumId, artistId, 0))
+                } else {
+                    // Otherwise use track artists as before
+                    mediaMetadata.artists.forEachIndexed { index, artist ->
+                        val artistId = artist.id ?: artistByName(artist.name)?.id ?: return@forEachIndexed
+                        insert(AlbumArtistMap(albumId, artistId, index))
+                    }
+                }
+            }
         }
+
     }
 
     @Transaction
@@ -357,7 +556,8 @@ interface DatabaseDao : SongsDao, AlbumsDao, ArtistsDao, PlaylistsDao, QueueDao 
                     queueId = mq.id,
                     songId = mq.queue[i].id,
                     index = i.toLong(),
-                    shuffledIndex = mq.queue[i].shuffleIndex.toLong()
+                    shuffledIndex = mq.queue[i].shuffleIndex.toLong(),
+                    parentArtist = mq.queue[i].parentArtist
                 )
             )
             i ++

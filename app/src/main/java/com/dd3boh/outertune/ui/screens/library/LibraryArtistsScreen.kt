@@ -49,6 +49,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import com.dd3boh.outertune.LocalMenuState
 import com.dd3boh.outertune.LocalPlayerAwareWindowInsets
 import com.dd3boh.outertune.MainActivity
@@ -190,6 +191,7 @@ fun LibraryArtistsScreen(
                         ArtistSortType.CREATE_DATE -> R.string.sort_by_create_date
                         ArtistSortType.NAME -> R.string.sort_by_name
                         ArtistSortType.SONG_COUNT -> R.string.sort_by_song_count
+                        ArtistSortType.YT_LINK_STATUS -> R.string.sort_by_yt_link_status
                     }
                 }
             )

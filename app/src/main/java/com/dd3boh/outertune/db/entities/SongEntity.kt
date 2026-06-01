@@ -44,10 +44,12 @@ data class SongEntity(
     val discNumber: Int? = null,
     val albumId: String? = null,
     val albumName: String? = null,
-//    val albumArtist // if anyone wants to implement album artists in a sane way, pull requests are welcome.
+    val albumArtist: String? = null, // if anyone wants to implement album artists in a sane way, pull requests are welcome. // Done, on 29.03.2026. v0.12.4
     val year: Int? = null,
     val date: LocalDateTime? = null, // ID3 tag property
     val dateModified: LocalDateTime? = null, // file property
+    val commentTag: String? = null,
+    val composer: String? = null,
 ) {
 
     fun localToggleLike() = copy(

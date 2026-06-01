@@ -60,5 +60,6 @@ data class Song @JvmOverloads constructor(
 
 data class QueueSong(
     @Embedded val song: Song,
-    @ColumnInfo(name = "shuffledIndex") val shuffledIndex: Int
+    @ColumnInfo(name = "shuffledIndex") val shuffledIndex: Int,
+    @ColumnInfo(name = "parentArtist") val parentArtist: String? = null // Added parentArtist to carry it from the join
 )

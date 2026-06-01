@@ -52,6 +52,7 @@ import com.dd3boh.outertune.LocalNetworkConnected
 import com.dd3boh.outertune.LocalPlayerConnection
 import com.dd3boh.outertune.R
 import com.dd3boh.outertune.db.entities.Playlist
+import com.dd3boh.outertune.db.entities.PlaylistEntity
 import com.dd3boh.outertune.db.entities.PlaylistSong
 import com.dd3boh.outertune.db.entities.Song
 import com.dd3boh.outertune.extensions.toMediaItem
@@ -86,7 +87,6 @@ fun PlaylistMenu(
     val database = LocalDatabase.current
     val downloadUtil = LocalDownloadUtil.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val queueBoard by playerConnection.queueBoard.collectAsState()
     val isNetworkConnected = LocalNetworkConnected.current
     val dbPlaylist by database.playlist(playlist.id).collectAsState(initial = playlist)
     var songs by remember {
@@ -263,8 +263,18 @@ fun PlaylistMenu(
             DownloadGridMenu(
                 state = downloadState,
                 onDownload = {
-                    val _songs = songs.filterNot { it.song.isLocal }.map { it.toMediaMetadata() }
-                    downloadUtil.download(_songs)
+//                    val _songs = songs.filterNot { it.song.isLocal }.map { it.toMediaMetadata() }
+//                    downloadUtil.download(_songs)
+                    val _songs = songs.filterNot { it.song.isLocal }.map { it.toMediaMetadata() } // or appropriate mapping
+                    val playlistEntity = PlaylistEntity(
+                        id = playlist.id, // for AlbumScreen/AlbumMenu use appropriate album id variable
+                        name = playlist.title,
+                        browseId = playlist.id,
+                        thumbnailUrl = playlist.thumbnailUrl,
+                        isLocal = true,
+                        bookmarkedAt = java.time.LocalDateTime.now()
+                    )
+                    downloadUtil.downloadCollection(_songs, playlistEntity)
                 },
                 onRemoveDownload = {
                     showRemoveDownloadDialog = true
@@ -419,12 +429,12 @@ fun PlaylistMenu(
         AddToQueueDialog(
 
             onAdd = { queueName ->
-                val q = queueBoard.addQueue(
+                val q = playerConnection.service.queueBoard.addQueue(
                     queueName, songs.map { it.toMediaMetadata() },
                     forceInsert = true, delta = false
                 )
                 q?.let {
-                    queueBoard.setCurrQueue(it)
+                    playerConnection.service.queueBoard.setCurrQueue(it)
                 }
             },
             onDismiss = {

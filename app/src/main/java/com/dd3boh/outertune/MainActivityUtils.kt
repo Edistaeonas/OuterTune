@@ -15,6 +15,7 @@ import com.dd3boh.outertune.constants.ExcludedScanPathsKey
 import com.dd3boh.outertune.constants.LastLocalScanKey
 import com.dd3boh.outertune.constants.LastVersionKey
 import com.dd3boh.outertune.constants.LocalLibraryEnableKey
+import com.dd3boh.outertune.constants.LookupYtmArtistsKey
 import com.dd3boh.outertune.constants.OOBE_VERSION
 import com.dd3boh.outertune.constants.OobeStatusKey
 import com.dd3boh.outertune.constants.SCANNER_OWNER_LM
@@ -32,14 +33,18 @@ import com.dd3boh.outertune.playback.DownloadUtil
 import com.dd3boh.outertune.playback.PlayerConnection
 import com.dd3boh.outertune.playback.queues.ListQueue
 import com.dd3boh.outertune.ui.utils.MEDIA_PERMISSION_LEVEL
+//import com.dd3boh.outertune.ui.utils.Updater
 import com.dd3boh.outertune.ui.utils.clearDtCache
+//import com.dd3boh.outertune.utils.compareVersion
 import com.dd3boh.outertune.utils.dataStore
 import com.dd3boh.outertune.utils.enumPreference
 import com.dd3boh.outertune.utils.get
+import com.dd3boh.outertune.utils.lmScannerCoroutine
 import com.dd3boh.outertune.utils.reportException
 import com.dd3boh.outertune.utils.scanners.LocalMediaScanner
 import com.dd3boh.outertune.utils.scanners.LocalMediaScanner.Companion.destroyScanner
 import com.dd3boh.outertune.utils.scanners.LocalMediaScanner.Companion.scannerState
+import com.dd3boh.outertune.utils.scanners.ScannerAbortException
 import com.zionhuang.innertube.YouTube
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -128,6 +133,11 @@ suspend fun scanInit(
     snackbarHostState: SnackbarHostState
 ) {
     val MAIN_TAG = "MainOtActivity"
+    // Prevent auto-scan from running if a manual scan is in progress
+    if (scannerState.value > 0) {
+        Log.i(MAIN_TAG, "Scanner is already in use. Aborting automatic scan.")
+        return
+    }
     val oobeStatus = context.dataStore.get(OobeStatusKey, defaultValue = 0)
     val localLibEnable = context.dataStore.get(LocalLibraryEnableKey, defaultValue = true)
     val ds = context.dataStore.data.first()[ScannerSensitivityKey]
@@ -141,12 +151,14 @@ suspend fun scanInit(
     val scannerImpl by enumPreference(
         context = context,
         key = ScannerImplKey,
-        defaultValue = ScannerImpl.TAGLIB
+        //defaultValue = ScannerImpl.TAGLIB
+        defaultValue = ScannerImpl.MEDIASTORE
     )
     val scanPaths = context.dataStore.get(ScanPathsKey, defaultValue = "")
     val excludedScanPaths = context.dataStore.get(ExcludedScanPathsKey, defaultValue = "")
     val strictExtensions = context.dataStore.get(ScannerStrictExtKey, defaultValue = false)
     val strictFilePaths = context.dataStore.get(ScannerStrictFilePathsKey, defaultValue = false)
+    val lookupYtmArtists = context.dataStore.get(LookupYtmArtistsKey, defaultValue = false)
     val autoScan = context.dataStore.get(AutomaticScannerKey, defaultValue = true)
     val lastLocalScan = context.dataStore.get(LastLocalScanKey, 0L)
 
@@ -188,6 +200,7 @@ suspend fun scanInit(
         context.dataStore.edit { settings ->
             settings[LastLocalScanKey] = timeNow
         }
+        Log.e(MAIN_TAG, "Calling initQueue from MainActivityUtils")
         playerConnection?.service?.initQueue()
         Log.i(MAIN_TAG, "Downloads scan completed. Local media is disabled.")
     }
@@ -207,7 +220,24 @@ suspend fun scanInit(
                     context, scannerImpl, SCANNER_OWNER_LM
                 )
                 val uris = scanner.scanLocal(scanPaths, excludedScanPaths)
-                scanner.quickSync(database, uris, scannerSensitivity, strictExtensions, strictFilePaths)
+                scanner.quickSync(database, uris, scannerSensitivity, strictExtensions, strictFilePaths, noDisable = true)
+
+                // start artist linking job
+                if (lookupYtmArtists && scannerState.value <= 0) {
+                    CoroutineScope(lmScannerCoroutine).launch {
+                        try {
+                            scanner.localToRemoteArtist(database)
+                        } catch (e: ScannerAbortException) {
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar(
+                                    message = "${context.getString(R.string.scanner_scan_fail)}: ${e.message}",
+                                    withDismissAction = true,
+                                    duration = SnackbarDuration.Long
+                                )
+                            }
+                        }
+                    }
+                }
             } catch (e: Exception) {
                 coroutineScope.launch {
                     snackbarHostState.showSnackbar(

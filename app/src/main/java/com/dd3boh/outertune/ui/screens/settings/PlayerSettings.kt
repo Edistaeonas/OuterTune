@@ -49,6 +49,7 @@ import com.dd3boh.outertune.ui.component.button.IconButton
 import com.dd3boh.outertune.ui.dialog.InfoLabel
 import com.dd3boh.outertune.ui.screens.settings.fragments.AudioEffectsFrag
 import com.dd3boh.outertune.ui.screens.settings.fragments.AudioQualityFrag
+import com.dd3boh.outertune.ui.screens.settings.fragments.GlobalRadioFrag
 import com.dd3boh.outertune.ui.screens.settings.fragments.PlaybackBehaviourFrag
 import com.dd3boh.outertune.ui.screens.settings.fragments.PlayerGeneralFrag
 import com.dd3boh.outertune.ui.utils.backToMain
@@ -101,6 +102,16 @@ fun PlayerSettings(
             modifier = Modifier.fillMaxWidth()
         ) {
             AudioEffectsFrag()
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+
+        PreferenceGroupTitle(
+            title = stringResource(R.string.global_radio_title)
+        )
+        ElevatedCard(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            GlobalRadioFrag()
         }
         Spacer(modifier = Modifier.height(16.dp))
 

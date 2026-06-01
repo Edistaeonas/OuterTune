@@ -21,6 +21,13 @@ class AccountViewModel @Inject constructor() : ViewModel() {
     val isLoading = MutableStateFlow(0)
 
     init {
+        refresh()
+    }
+
+    fun refresh() {
+        // Reset loading state
+        isLoading.value = 0
+
         viewModelScope.launch {
             YouTube.library("FEmusic_liked_playlists").completed().onSuccess {
                 playlists.value = it.items.filterIsInstance<PlaylistItem>()

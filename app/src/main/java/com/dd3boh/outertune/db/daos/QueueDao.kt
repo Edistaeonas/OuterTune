@@ -26,7 +26,7 @@ interface QueueDao {
     fun getAllQueues(): Flow<List<QueueEntity>>
 
     @Transaction
-    @Query("SELECT song.*, queue_song_map.shuffledIndex from queue_song_map JOIN song ON queue_song_map.songId = song.id WHERE queueId = :queueId ORDER BY `index`")
+    @Query("SELECT song.*, queue_song_map.shuffledIndex, queue_song_map.parentArtist from queue_song_map JOIN song ON queue_song_map.songId = song.id WHERE queueId = :queueId ORDER BY `index`")
     fun getQueueSongs(queueId: Long): Flow<List<QueueSong>>
 
     suspend fun readQueue(): List<MultiQueueObject> {
@@ -40,13 +40,13 @@ interface QueueDao {
                 MultiQueueObject(
                     id = queue.id,
                     title = queue.title,
-                    queue = shuffledSongs.map {
-                        val s = it.song.toMediaMetadata()
+                    songs = shuffledSongs.map {
+                        val s = it.song.toMediaMetadata().copy(parentArtist = it.parentArtist)
                         s.shuffleIndex = it.shuffledIndex
                         s
                     }.toMutableList(),
                     shuffled = queue.shuffled,
-                    queuePos = queue.queuePos,
+                    queuePosState = queue.queuePos,
                     lastSongPos = queue.lastSongPos,
                     index = queue.index,
                     playlistId = queue.playlistId
@@ -67,13 +67,13 @@ interface QueueDao {
         return MultiQueueObject(
             id = q.id,
             title = q.title,
-            queue = shuffledSongs.map {
-                val s = it.song.toMediaMetadata()
+            songs = shuffledSongs.map {
+                val s = it.song.toMediaMetadata().copy(parentArtist = it.parentArtist)
                 s.shuffleIndex = it.shuffledIndex
                 s
             }.toMutableList(),
             shuffled = q.shuffled,
-            queuePos = q.queuePos,
+            queuePosState = q.queuePos,
             lastSongPos = q.lastSongPos,
             index = q.index,
             playlistId = q.playlistId

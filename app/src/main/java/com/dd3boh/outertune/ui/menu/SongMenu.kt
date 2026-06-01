@@ -4,6 +4,7 @@ import android.content.Intent
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,10 +27,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -43,6 +46,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastSumBy
+import androidx.media3.exoplayer.offline.Download.STATE_COMPLETED
 import androidx.media3.exoplayer.offline.DownloadService
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
@@ -71,12 +75,14 @@ import com.dd3boh.outertune.ui.dialog.AddToQueueDialog
 import com.dd3boh.outertune.ui.dialog.ArtistDialog
 import com.dd3boh.outertune.ui.dialog.DetailsDialog
 import com.dd3boh.outertune.ui.dialog.TextFieldDialog
+import com.dd3boh.outertune.ui.dialog.DefaultDialog
 import com.dd3boh.outertune.utils.joinByBullet
 import com.dd3boh.outertune.utils.makeTimeString
 import com.dd3boh.outertune.utils.rememberEnumPreference
 import com.dd3boh.outertune.utils.syncCoroutine
 import com.zionhuang.innertube.YouTube
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -96,14 +102,12 @@ fun SongMenu(
     val clipboardManager = LocalClipboard.current
     val syncUtils = LocalSyncUtils.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val queueBoard by playerConnection.queueBoard.collectAsState()
 
     val syncMode by rememberEnumPreference(key = YtmSyncModeKey, defaultValue = SyncMode.RW)
 
     val song = originalSong
     val download by LocalDownloadUtil.current.getDownload(originalSong.id).collectAsState(initial = null)
-    val coroutineScope =
-        CoroutineScope(syncCoroutine) // rememberCoroutineScope has exception "rememberCoroutineScope left the composition"
+    val coroutineScope = CoroutineScope(syncCoroutine) // rememberCoroutineScope has exception "rememberCoroutineScope left the composition"
 
     val currentFormatState = database.format(originalSong.id).collectAsState(initial = null)
     val currentFormat = currentFormatState.value
@@ -123,6 +127,8 @@ fun SongMenu(
     var showDetailsDialog by rememberSaveable {
         mutableStateOf(false)
     }
+    var showRemoveDownloadDialog by remember {
+        mutableStateOf(false) }
 
     ListItem(
         title = song.song.title,
@@ -249,19 +255,26 @@ fun SongMenu(
             DownloadGridMenu(
                 localDateTime = download,
                 onDownload = {
-                    downloadUtil.download(song.toMediaMetadata())
+                    downloadUtil.downloadSingle(song.toMediaMetadata())
                 },
                 onRemoveDownload = {
-                    if (song.song.localPath != null) {
-                        downloadUtil.delete(song)
-                    } else {
-                        DownloadService.sendRemoveDownload(
-                            context,
-                            ExoDownloadService::class.java,
-                            song.id,
-                            false
-                        )
-                    }
+                    showRemoveDownloadDialog = true
+//                    if (song.song.localPath != null) {
+//                        downloadUtil.delete(song)
+//                    } else {
+//
+//                        // 1. Command ExoPlayer to delete the physical bytes
+//                        DownloadService.sendRemoveDownload(
+//                            context,
+//                            ExoDownloadService::class.java,
+//                            song.id,
+//                            false
+//                        )
+//                        // 2. FIX: Clear the database status immediately so the UI Flow refreshes
+//                        coroutineScope.launch(Dispatchers.IO) {
+//                            database.updateDownloadStatus(song.id, null)
+//                        }
+//                    }
                 }
             )
 
@@ -363,12 +376,12 @@ fun SongMenu(
     if (showChooseQueueDialog) {
         AddToQueueDialog(
             onAdd = { queueName ->
-                val q = queueBoard.addQueue(
+                val q = playerConnection.service.queueBoard.addQueue(
                     queueName, listOf(song.toMediaMetadata()),
                     forceInsert = true, delta = false
                 )
                 q?.let {
-                    queueBoard.setCurrQueue(it)
+                    playerConnection.service.queueBoard.setCurrQueue(it)
                 }
             },
             onDismiss = {
@@ -408,4 +421,36 @@ fun SongMenu(
             setVisibility = { showDetailsDialog = it }
         )
     }
+
+    if (showRemoveDownloadDialog) {
+        DefaultDialog(
+            onDismiss = { showRemoveDownloadDialog = false },
+            content = {
+                Text(
+                    text = stringResource(R.string.remove_download_song_confirm, song.title),
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(horizontal = 18.dp)
+                )
+            },
+            buttons = {
+                TextButton(onClick = { showRemoveDownloadDialog = false }) {
+                    Text(text = stringResource(android.R.string.cancel)) }
+                TextButton(
+                    onClick = {
+                        showRemoveDownloadDialog = false
+                        // 1. Physical Delete
+                        DownloadService.sendRemoveDownload(context, ExoDownloadService::class.java, song.id, false)
+                        // 2. Instant DB update for UI Flow
+                        coroutineScope.launch(Dispatchers.IO) {
+                            database.updateDownloadStatus(song.id, null)
+                        }
+                        onDismiss()
+                    }
+                ) {
+                    Text(text = stringResource(android.R.string.ok))
+                }
+            }
+        )
+    }
+
 }

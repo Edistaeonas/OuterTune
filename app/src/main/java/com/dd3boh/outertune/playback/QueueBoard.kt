@@ -11,6 +11,9 @@ package com.dd3boh.outertune.playback
 import android.util.Log
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.util.fastFirst
 import androidx.compose.ui.util.fastFirstOrNull
 import androidx.compose.ui.util.fastForEachIndexed
@@ -18,13 +21,13 @@ import androidx.media3.common.C
 import com.dd3boh.outertune.constants.PersistentQueueKey
 import com.dd3boh.outertune.constants.QUEUE_DEBUG
 import com.dd3boh.outertune.db.entities.QueueEntity
-import com.dd3boh.outertune.extensions.currentMetadata
 import com.dd3boh.outertune.extensions.move
 import com.dd3boh.outertune.extensions.toMediaItem
 import com.dd3boh.outertune.models.MediaMetadata
 import com.dd3boh.outertune.models.MultiQueueObject
 import com.dd3boh.outertune.utils.dataStore
 import com.dd3boh.outertune.utils.get
+import com.dd3boh.outertune.utils.reportException
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -48,11 +51,12 @@ class QueueBoard(
     private val player: MusicService,
     val masterQueues: SnapshotStateList<MultiQueueObject> = mutableStateListOf(),
     queues: MutableList<MultiQueueObject> = ArrayList(),
-    private var maxQueues: Int
-) {
+    private var maxQueues: Int) {
+
     private val TAG = QueueBoard::class.simpleName.toString()
 
-    private var masterIndex: Int // current queue index
+    // --- DEFINITIVE FIX: Make masterIndex an observable state object ---
+    private var masterIndex by mutableIntStateOf(-1)// current queue index
     var detachedHead = false
 
     init {
@@ -60,10 +64,30 @@ class QueueBoard(
         if (maxQueues < 0) {
             maxQueues = 1
         }
-        if (!queues.isEmpty()) {
+        if (queues.isNotEmpty()) {
             masterQueues.addAll(queues.subList((queues.size - maxQueues).coerceAtLeast(0), queues.size))
         }
+        // Set the initial value for our new state object
         masterIndex = masterQueues.size - 1
+    }
+
+    /**
+     * Safely loads a list of queues and updates the maxQueues limit on the existing object.
+     * This modifies the internal state in-place, which is safe for Compose.
+     */
+    fun loadState(queues: List<MultiQueueObject>, max: Int) {
+        Log.i(TAG, "Safely loading state into existing QueueBoard. Queue count: ${queues.size}, Max Queues: $max")
+        this.maxQueues = if (max < 0) 1 else max
+        masterQueues.clear()
+        if (queues.isNotEmpty()) {
+            // Apply the maxQueues limit using the same logic as the constructor's init block
+            val startIndex = (queues.size - this.maxQueues).coerceAtLeast(0)
+            masterQueues.addAll(queues.subList(startIndex, queues.size))
+        }
+        // Reset the master index to point to the latest queue (or -1 if empty)
+        masterIndex = masterQueues.size - 1
+        regenerateIndexes()
+        Log.i(TAG, "State load complete. masterQueues size is now ${masterQueues.size}")
     }
 
     /**
@@ -367,7 +391,11 @@ class QueueBoard(
             }
         }
 
-        setCurrQueue(q, false)
+        //setCurrQueue(q, false)
+        // Instead of resetting the entire queue, we just add the new items to the end.
+        // This is a non-disruptive operation and will not cause a stutter.
+        val mediaItems = mediaList.map { it.toMediaItem(player) }
+        player.player.addMediaItems(mediaItems)
 
         if (saveToDb) {
             saveQueueSongs(q)
@@ -671,6 +699,29 @@ class QueueBoard(
      * =================
      */
 
+
+    /**
+     * Safely loads a list of queues into the existing QueueBoard instance.
+     * This clears the current queues and replaces them with the provided list,
+     * allowing Compose to handle the state change safely without swapping the object instance.
+     */
+    fun loadQueues(queues: List<MultiQueueObject>) {
+        // This method modifies the masterQueues list in-place.
+        // Because masterQueues is a SnapshotStateList, Compose can handle this change safely.
+        masterQueues.clear()
+        if (queues.isNotEmpty()) {
+            // Use the same logic as the init block to respect maxQueues
+            masterQueues.addAll(queues.subList((queues.size - maxQueues).coerceAtLeast(0), queues.size))
+        }
+        masterIndex = masterQueues.size - 1
+        regenerateIndexes()
+        Log.e(TAG, "Safely loaded ${masterQueues.size} queues into existing QueueBoard object.")
+    }
+
+    fun setMaxQueues(max: Int) {
+        this.maxQueues = if (max < 0) 1 else max
+    }
+
     /**
      * Get all copy of all queues
      */
@@ -680,7 +731,7 @@ class QueueBoard(
     /**
      * Get the index of the current queue
      */
-    fun getMasterIndex() = masterIndex
+    //fun getMasterIndex() = masterIndex
 
     /**
      * Retrieve the current queue
@@ -688,12 +739,17 @@ class QueueBoard(
      * @return Queue object (entire object)
      */
     fun getCurrentQueue(): MultiQueueObject? {
-        try {
-            return masterQueues[masterIndex]
-        } catch (e: IndexOutOfBoundsException) {
-            masterIndex = masterQueues.size - 1 // reset var if invalid
+
+        // If masterIndex is not a valid index for the masterQueues list,
+        // (e.g., -1 when the list is empty), return null immediately.
+        // This prevents the IndexOutOfBoundsException at the source.
+
+        if (masterIndex !in masterQueues.indices) {
             return null
         }
+
+        // If the index is valid, it is now safe to access the element.
+        return masterQueues[masterIndex]
     }
 
     fun renameQueue(queue: MultiQueueObject, newName: String) {
@@ -747,70 +803,53 @@ class QueueBoard(
      * false to start from the beginning.
      * @return New current position tracker
      */
-    fun setCurrQueue(item: MultiQueueObject?, shouldResume: Boolean = true): Int? {
-        Log.d(
-            TAG,
-            "Loading queue ${item?.title ?: "null"} into player. Shuffle state = ${item?.shuffled}"
-        )
 
-        if (item == null || item.queue.isEmpty()) {
-            player.player.setMediaItems(ArrayList())
+    fun setCurrQueue(item: MultiQueueObject?, shouldResume: Boolean = true): Int? {
+        try {
+            masterIndex = masterQueues.indexOf(item)
+            item?.let { bubbleUp(it) }
+
+            Log.i(TAG,"Loading queue ${item?.title ?: "null"} into player. Shuffle state = ${item?.shuffled}")
+
+            if (item == null || item.queue.isEmpty()) {
+                Log.e(TAG, "Attempted to set an empty or null queue. Clearing player.")
+                player.player.setMediaItems(ArrayList())
+                return null
+            }
+
+            // --- THE DEFINITIVE FIX: Create a thread-safe snapshot ---
+            // .toList() creates an immutable copy, preventing race conditions with the background save thread.
+            val mediaItems: List<MediaMetadata> = item.getCurrentQueueShuffled().toList()
+            var queuePos = item.getQueuePosShuffled()
+            // --- END FIX ---
+
+            // Now, validate the index against our safe, immutable copy.
+            if (queuePos < 0 || queuePos >= mediaItems.size) {
+                Log.e(TAG, "CRITICAL: Correcting invalid queue position. Was: $queuePos, Queue size: ${mediaItems.size}. Resetting to 0.")
+                queuePos = 0
+                item.setCurrentQueuePos(0) // Also reset the underlying state
+                saveQueue(item)
+            }
+
+            val lastSongPos = if (shouldResume) item.lastSongPos else C.TIME_UNSET
+
+            Log.i(TAG, "Setting player media items. Queue size: ${mediaItems.size}, Start index: $queuePos")
+            player.player.setMediaItems(mediaItems.map { it.toMediaItem(player) }, queuePos, lastSongPos)
+
+//            masterIndex = masterQueues.indexOf(item)
+//            bubbleUp(item)
+            if (player.player.shuffleModeEnabled != item.shuffled) {
+                player.player.shuffleModeEnabled = item.shuffled
+            }
+            return queuePos
+        } catch (e: Exception) {
+            // The ultimate safety net remains, just in case.
+            Log.e(TAG, "FATAL ERROR during queue restoration. Wiping player state to prevent crash.", e)
+            reportException(e)
+            player.player.clearMediaItems()
+            player.player.prepare()
             return null
         }
-
-        // I have no idea why this value gets reset to 0 by the end... but ig this works
-        val queuePos = item.getQueuePosShuffled()
-        val lastSongPos = if (shouldResume) item.lastSongPos else C.TIME_UNSET
-        val realQueuePos = item.queuePos
-        masterIndex = masterQueues.indexOf(item)
-
-        val mediaItems: MutableList<MediaMetadata> = item.getCurrentQueueShuffled()
-
-        Log.d(
-            TAG, "Setting current queue. in bounds: ${queuePos >= 0 && queuePos < mediaItems.size}, " +
-                    "queuePos: $queuePos, real queuePos: ${realQueuePos}, lastSongPos: $lastSongPos" +
-                    "ids: ${player.player.currentMetadata?.id}, ${mediaItems[queuePos].id}"
-        )
-        /**
-         * current playing == jump target, do seamlessly
-         */
-        val seamlessSupported = (queuePos < mediaItems.size)
-                && player.player.currentMetadata?.id == mediaItems[queuePos].id
-        if (seamlessSupported) {
-            Log.d(TAG, "Trying seamless queue switch. Is first song?: ${queuePos == 0}")
-            val playerIndex = player.player.currentMediaItemIndex
-
-            if (queuePos == 0) {
-                val playerItemCount = player.player.mediaItemCount
-                // player.player.replaceMediaItems seems to stop playback so we
-                // remove all songs except the currently playing one and then add the list of new items
-                if (playerIndex < playerItemCount - 1) {
-                    player.player.removeMediaItems(playerIndex + 1, playerItemCount)
-                }
-                if (playerIndex > 0) {
-                    player.player.removeMediaItems(0, playerIndex)
-                }
-                // add all songs except the first one since it is already present and playing
-                player.player.addMediaItems(mediaItems.drop(1).map { it.toMediaItem() })
-            } else {
-                // replace items up to current playing, then replace items after current
-                player.player.replaceMediaItems(
-                    0, playerIndex,
-                    mediaItems.subList(0, queuePos).map { it.toMediaItem() })
-                player.player.replaceMediaItems(
-                    queuePos + 1, Int.MAX_VALUE,
-                    mediaItems.subList(queuePos + 1, mediaItems.size).map { it.toMediaItem() })
-            }
-        } else {
-            Log.d(TAG, "Seamless is not supported. Loading songs in directly")
-            player.player.setMediaItems(mediaItems.map { it.toMediaItem() }, queuePos, lastSongPos)
-        }
-
-        bubbleUp(item)
-        if (player.player.shuffleModeEnabled != item.shuffled) {
-            player.player.shuffleModeEnabled = item.shuffled
-        }
-        return queuePos
     }
 
     /**
@@ -881,16 +920,17 @@ class QueueBoard(
     }
 
     private fun saveQueueSongs(mq: MultiQueueObject) {
-        if (player.dataStore.get(PersistentQueueKey, true)) {
-            queueSongMap.add(
-                PriorityJob(
-                    0,
-                    coroutineScope.launch(start = CoroutineStart.DEFAULT) {
-                        player.database.saveQueue(mq)
-                    }
+        // Launch a background coroutine to handle saving, to avoid blocking the main thread.
+        CoroutineScope(Dispatchers.IO).launch {
+            if (player.dataStore.get(PersistentQueueKey, true)) {
+                queueSongMap.add(
+                    PriorityJob(
+                        0,
+                        launch(start = CoroutineStart.LAZY) {
+                            player.database.saveQueue(mq)
+                        }
+                    )
                 )
-            )
-            CoroutineScope(Dispatchers.IO).launch {
                 databaseDispatcher()
             }
         }
@@ -913,17 +953,17 @@ class QueueBoard(
     }
 
     private fun saveAllQueues(mq: MutableList<MultiQueueObject>) {
-        if (player.dataStore.get(PersistentQueueKey, true)) {
-            queueEntity.add(
-                // we select most recent task, therefore "lowest" numeric priority at the end of the list == "highest" priority
-                PriorityJob(
-                    -1,
-                    coroutineScope.launch(start = CoroutineStart.DEFAULT) {
-                        player.database.updateAllQueues(mq)
-                    }
+        // Launch a background coroutine to handle saving, to avoid blocking the main thread.
+        CoroutineScope(Dispatchers.IO).launch {
+            if (player.dataStore.get(PersistentQueueKey, true)) {
+                queueEntity.add(
+                    PriorityJob(
+                        -1,
+                        launch(start = CoroutineStart.LAZY) {
+                            player.database.updateAllQueues(mq)
+                        }
+                    )
                 )
-            )
-            CoroutineScope(Dispatchers.IO).launch {
                 databaseDispatcher()
             }
         }

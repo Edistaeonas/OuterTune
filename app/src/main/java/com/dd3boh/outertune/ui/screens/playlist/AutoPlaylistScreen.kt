@@ -450,7 +450,7 @@ fun AutoPlaylistScreen(
                                         else -> {
                                             IconButton(
                                                 onClick = {
-                                                    downloadUtil.download(songs.map { it.toMediaMetadata() })
+                                                    downloadUtil.downloadSongs(songs.map { it.toMediaMetadata() })
                                                 }
                                             ) {
                                                 Icon(

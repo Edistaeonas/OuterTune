@@ -4,6 +4,7 @@ import android.content.Intent
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,6 +21,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -32,7 +35,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.media3.exoplayer.offline.Download.STATE_COMPLETED
 import androidx.media3.exoplayer.offline.DownloadService
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
@@ -55,11 +60,13 @@ import com.dd3boh.outertune.ui.component.items.ListItem
 import com.dd3boh.outertune.ui.dialog.AddToPlaylistDialog
 import com.dd3boh.outertune.ui.dialog.AddToQueueDialog
 import com.dd3boh.outertune.ui.dialog.ArtistDialog
+import com.dd3boh.outertune.ui.dialog.DefaultDialog
 import com.dd3boh.outertune.utils.joinByBullet
 import com.dd3boh.outertune.utils.makeTimeString
 import com.dd3boh.outertune.utils.syncCoroutine
 import com.zionhuang.innertube.YouTube
 import com.zionhuang.innertube.models.SongItem
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 @Composable
@@ -73,7 +80,6 @@ fun YouTubeSongMenu(
     val downloadUtil = LocalDownloadUtil.current
     val database = LocalDatabase.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val queueBoard by playerConnection.queueBoard.collectAsState()
     val syncUtils = LocalSyncUtils.current
 
     val librarySong by database.song(song.id).collectAsState(initial = null)
@@ -95,7 +101,8 @@ fun YouTubeSongMenu(
     var showSelectArtistDialog by rememberSaveable {
         mutableStateOf(false)
     }
-
+    var showRemoveDownloadDialog by remember {
+        mutableStateOf(false) }
 
     ListItem(
         title = song.title,
@@ -194,15 +201,22 @@ fun YouTubeSongMenu(
                 database.transaction {
                     insert(song.toMediaMetadata())
                 }
-                downloadUtil.download(song.toMediaMetadata())
+                downloadUtil.downloadSingle(song.toMediaMetadata())
             },
             onRemoveDownload = {
-                DownloadService.sendRemoveDownload(
-                    context,
-                    ExoDownloadService::class.java,
-                    song.id,
-                    false
-                )
+                showRemoveDownloadDialog = true
+//                // 1. Command ExoPlayer to delete the physical bytes
+//                DownloadService.sendRemoveDownload(
+//                    context,
+//                    ExoDownloadService::class.java,
+//                    song.id,
+//                    false
+//                )
+//                // 2. FIXED: Immediate UI Refresh
+//                // Manually clearing the status triggers the database Flow to refresh the UI list instantly.
+//                coroutineScope.launch(Dispatchers.IO) {
+//                    database.updateDownloadStatus(song.id, null)
+//                }
             }
         )
         if (artists.isNotEmpty()) {
@@ -250,12 +264,12 @@ fun YouTubeSongMenu(
     if (showChooseQueueDialog) {
         AddToQueueDialog(
             onAdd = { queueName ->
-                val q = queueBoard.addQueue(
+                val q = playerConnection.service.queueBoard.addQueue(
                     queueName, listOf(song.toMediaMetadata()),
                     forceInsert = true, delta = false
                 )
                 q?.let {
-                    queueBoard.setCurrQueue(it)
+                    playerConnection.service.queueBoard.setCurrQueue(it)
                 }
             },
             onDismiss = {
@@ -292,4 +306,37 @@ fun YouTubeSongMenu(
             onDismiss = { showSelectArtistDialog = false }
         )
     }
+
+    if (showRemoveDownloadDialog) {
+        DefaultDialog(
+            onDismiss = { showRemoveDownloadDialog = false },
+            content = {
+                Text(
+                    text = stringResource(R.string.remove_download_song_confirm, song.title),
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(horizontal = 18.dp)
+                )
+            },
+            buttons = {
+                TextButton(onClick = { showRemoveDownloadDialog = false }) {
+                    Text(text = stringResource(android.R.string.cancel))
+                }
+                TextButton(
+                    onClick = {
+                        showRemoveDownloadDialog = false
+                        // 1. Physical Delete
+                        DownloadService.sendRemoveDownload(context, ExoDownloadService::class.java, song.id, false)
+                        // 2. Instant DB update for UI Flow
+                        coroutineScope.launch(Dispatchers.IO) {
+                            database.updateDownloadStatus(song.id, null)
+                        }
+                        onDismiss()
+                    }
+                ) {
+                    Text(text = stringResource(android.R.string.ok))
+                }
+            }
+        )
+    }
+
 }

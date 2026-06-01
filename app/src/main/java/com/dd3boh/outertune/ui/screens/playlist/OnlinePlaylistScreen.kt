@@ -268,18 +268,22 @@ fun OnlinePlaylistScreen(
                 TextButton(
                     onClick = {
                         showRemoveDownloadDialog = false
-                        database.transaction {
-                            dbPlaylist?.id?.let { clearPlaylist(it) }
+                        dbPlaylist?.id?.let { id ->
+                            // Use the new recursive deletion function
+                            downloadUtil.removeCollectionDownload(id)
                         }
-
-                        songs.forEach { song ->
-                            DownloadService.sendRemoveDownload(
-                                context,
-                                ExoDownloadService::class.java,
-                                song.id,
-                                false
-                            )
-                        }
+//                        database.transaction {
+//                            dbPlaylist?.id?.let { clearPlaylist(it) }
+//                        }
+//
+//                        songs.forEach { song ->
+//                            DownloadService.sendRemoveDownload(
+//                                context,
+//                                ExoDownloadService::class.java,
+//                                song.id,
+//                                false
+//                            )
+//                        }
                     }
                 ) {
                     Text(text = stringResource(android.R.string.ok))
@@ -449,14 +453,26 @@ fun OnlinePlaylistScreen(
                                                     else -> {
                                                         IconButton(
                                                             onClick = {
-                                                                viewModel.viewModelScope.launch(Dispatchers.IO) {
-                                                                    syncUtils.syncPlaylist(
-                                                                        playlist.id,
-                                                                        dbPlaylist!!.id
-                                                                    )
-                                                                }
+//                                                                viewModel.viewModelScope.launch(Dispatchers.IO) {
+//                                                                    syncUtils.syncPlaylist(
+//                                                                        playlist!!.id,
+//                                                                        dbPlaylist!!.id
+//                                                                    )
+//                                                                }
                                                                 val _songs = songs.map { it.toMediaMetadata() }
-                                                                downloadUtil.download(_songs)
+                                                                // FIX: Manually construct the Entity since the extension is missing
+                                                                val playlistEntity = PlaylistEntity(
+                                                                    id = playlist!!.id,
+                                                                    name = playlist!!.title,
+                                                                    browseId = playlist!!.id,
+                                                                    thumbnailUrl = playlist!!.thumbnail,
+                                                                    isEditable = playlist!!.isEditable,
+                                                                    bookmarkedAt = java.time.LocalDateTime.now(),
+                                                                    playEndpointParams = playlist!!.playEndpoint?.params,
+                                                                    shuffleEndpointParams = playlist!!.shuffleEndpoint?.params,
+                                                                    radioEndpointParams = playlist!!.radioEndpoint?.params
+                                                                )
+                                                                downloadUtil.downloadCollection(_songs, playlistEntity)
                                                             }
                                                         ) {
                                                             Icon(

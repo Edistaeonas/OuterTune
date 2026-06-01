@@ -45,12 +45,18 @@ object AppModule {
     @PlayerCache
     fun providePlayerCache(@ApplicationContext context: Context, databaseProvider: DatabaseProvider): SimpleCache {
         val constructor = {
+            val userSetCacheSize = context.dataStore[MaxSongCacheSizeKey] ?: 0
+
+            // Logic: -1 is Unlimited, 0 is Off (force 20MB internally), >0 is user preference.
+            val evictor = when (userSetCacheSize) {
+                -1 -> NoOpCacheEvictor()
+                0 -> LeastRecentlyUsedCacheEvictor(20 * 1024 * 1024L) // Invisible 20MB default to allow a couple of internal song cache.
+                else -> LeastRecentlyUsedCacheEvictor(userSetCacheSize.toLong() * 1024 * 1024L)
+            }
+
             SimpleCache(
                 context.filesDir.resolve("exoplayer"),
-                when (val cacheSize = context.dataStore[MaxSongCacheSizeKey] ?: 0) {
-                    -1 -> NoOpCacheEvictor()
-                    else -> LeastRecentlyUsedCacheEvictor(cacheSize * 1024 * 1024L)
-                },
+                evictor,
                 databaseProvider
             )
         }

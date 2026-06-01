@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import org.apache.commons.lang3.RandomStringUtils
+import java.util.UUID
 import java.time.LocalDateTime
 
 @Immutable
@@ -42,6 +43,7 @@ data class AlbumEntity(
     }
 
     companion object {
-        fun generateAlbumId() = "LB" + RandomStringUtils.insecure().next(8, true, false)
+        //fun generateAlbumId() = "LB" + RandomStringUtils.insecure().next(8, true, false)
+        fun generateAlbumId() = "LB" + UUID.randomUUID().toString().take(8)
     }
 }

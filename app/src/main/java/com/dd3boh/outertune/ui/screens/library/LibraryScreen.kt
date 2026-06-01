@@ -1,6 +1,7 @@
 package com.dd3boh.outertune.ui.screens.library
 
 import android.content.pm.PackageManager
+import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,9 +25,12 @@ import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarScrollBehavior
@@ -69,6 +73,7 @@ import com.dd3boh.outertune.constants.LibrarySortTypeKey
 import com.dd3boh.outertune.constants.LibraryViewType
 import com.dd3boh.outertune.constants.LibraryViewTypeKey
 import com.dd3boh.outertune.constants.LocalLibraryEnableKey
+import com.dd3boh.outertune.constants.MediaSessionConstants
 import com.dd3boh.outertune.constants.ShowLikedAndDownloadedPlaylist
 import com.dd3boh.outertune.db.entities.Album
 import com.dd3boh.outertune.db.entities.Artist
@@ -285,291 +290,295 @@ fun LibraryScreen(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .pullToRefresh(
-                state = pullRefreshState,
-                isRefreshing = isSyncingRemotePlaylists || isSyncingRemoteAlbums || isSyncingRemoteArtists
-                        || isSyncingRemoteSongs || isSyncingRemoteLikedSongs,
-                onRefresh = {
-                    viewModel.syncAll(true)
-                }
-            ),
-    ) {
-        when (filter) {
-            LibraryFilter.ALBUMS ->
-                LibraryAlbumsScreen(
-                    navController,
-                    libraryFilterContent = filterContent
-                )
-
-            LibraryFilter.ARTISTS ->
-                LibraryArtistsScreen(
-                    navController,
-                    libraryFilterContent = filterContent
-                )
-
-            LibraryFilter.PLAYLISTS ->
-                LibraryPlaylistsScreen(
-                    navController,
-                    libraryFilterContent = filterContent
-                )
-
-            LibraryFilter.SONGS ->
-                LibrarySongsScreen(
-                    navController,
-                    libraryFilterContent = filterContent
-                )
-
-            LibraryFilter.FOLDERS ->
-                LibraryFoldersScreen(
-                    navController,
-                    scrollBehavior,
-                    filterContent = filterContent
-                )
-
-            LibraryFilter.ALL -> {
-                ScrollToTopManager(navController, lazyListState)
-                when (viewType) {
-                    LibraryViewType.LIST -> {
-                        LazyColumn(
-                            state = lazyListState,
-                            contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues()
-                        ) {
-                            item(
-                                key = "filter",
-                                contentType = CONTENT_TYPE_HEADER
-                            ) {
-                                filterContent()
-                            }
-
-                            item(
-                                key = "header",
-                                contentType = CONTENT_TYPE_HEADER
-                            ) {
-                                headerContent()
-                            }
-
-                            if (showLikedAndDownloadedPlaylist) {
-                                item(
-                                    key = likedPlaylist.id,
-                                    contentType = { CONTENT_TYPE_PLAYLIST }
-                                ) {
-                                    AutoPlaylistListItem(
-                                        playlist = likedPlaylist,
-                                        thumbnail = Icons.Rounded.Favorite,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                navController.navigate("auto_playlist/${likedPlaylist.id}")
-                                            }
-                                            .animateItem()
-                                    )
-                                }
-
-                                item(
-                                    key = downloadedPlaylist.id,
-                                    contentType = { CONTENT_TYPE_PLAYLIST }
-                                ) {
-                                    AutoPlaylistListItem(
-                                        playlist = downloadedPlaylist,
-                                        thumbnail = Icons.Rounded.CloudDownload,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                navController.navigate("auto_playlist/${downloadedPlaylist.id}")
-                                            }
-                                            .animateItem()
-                                    )
-                                }
-                            }
-
-                            allItems.let { allItems ->
-                                if (allItems.isEmpty() && !showLikedAndDownloadedPlaylist) {
-                                    item {
-                                        EmptyPlaceholder(
-                                            icon = Icons.AutoMirrored.Rounded.List,
-                                            text = stringResource(R.string.library_empty),
-                                            modifier = Modifier.animateItem()
-                                        )
-                                    }
-                                }
-
-                                items(
-                                    items = allItems.distinctBy { it.hashCode() },
-                                    key = { it.hashCode() },
-                                    contentType = { CONTENT_TYPE_LIST }
-                                ) { item ->
-                                    when (item) {
-                                        is Album -> {
-                                            LibraryAlbumListItem(
-                                                navController = navController,
-                                                menuState = menuState,
-                                                album = item,
-                                                isActive = item.id == mediaMetadata?.album?.id,
-                                                isPlaying = isPlaying,
-                                                modifier = Modifier.animateItem()
-                                            )
-                                        }
-
-                                        is Artist -> {
-                                            LibraryArtistListItem(
-                                                navController = navController,
-                                                menuState = menuState,
-                                                coroutineScope = coroutineScope,
-                                                modifier = Modifier.animateItem(),
-                                                artist = item
-                                            )
-                                        }
-
-                                        is Playlist -> {
-                                            LibraryPlaylistListItem(
-                                                navController = navController,
-                                                menuState = menuState,
-                                                coroutineScope = coroutineScope,
-                                                playlist = item,
-                                                modifier = Modifier.animateItem()
-                                            )
-                                        }
-
-                                        else -> {}
-                                    }
-                                }
-                            }
-                        }
-                        LazyColumnScrollbar(
-                            state = lazyListState,
-                        )
+    Scaffold(
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .padding(paddingValues)
+                .fillMaxSize()
+                .pullToRefresh(
+                    state = pullRefreshState,
+                    isRefreshing = isSyncingRemotePlaylists || isSyncingRemoteAlbums || isSyncingRemoteArtists
+                            || isSyncingRemoteSongs || isSyncingRemoteLikedSongs,
+                    onRefresh = {
+                        viewModel.syncAll(true)
                     }
+                ),
+        ) {
+            when (filter) {
+                LibraryFilter.ALBUMS ->
+                    LibraryAlbumsScreen(
+                        navController,
+                        libraryFilterContent = filterContent
+                    )
 
-                    LibraryViewType.GRID -> {
-                        LazyVerticalGrid(
-                            state = lazyGridState,
-                            columns = GridCells.Adaptive(minSize = GridThumbnailHeight + 24.dp),
-                            contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues()
-                        ) {
-                            item(
-                                key = "filter",
-                                span = { GridItemSpan(maxLineSpan) },
-                                contentType = CONTENT_TYPE_HEADER
+                LibraryFilter.ARTISTS ->
+                    LibraryArtistsScreen(
+                        navController,
+                        libraryFilterContent = filterContent
+                    )
+
+                LibraryFilter.PLAYLISTS ->
+                    LibraryPlaylistsScreen(
+                        navController,
+                        libraryFilterContent = filterContent
+                    )
+
+                LibraryFilter.SONGS ->
+                    LibrarySongsScreen(
+                        navController,
+                        libraryFilterContent = filterContent
+                    )
+
+                LibraryFilter.FOLDERS ->
+                    LibraryFoldersScreen(
+                        navController,
+                        scrollBehavior,
+                        filterContent = filterContent
+                    )
+
+                LibraryFilter.ALL -> {
+                    ScrollToTopManager(navController, lazyListState)
+                    when (viewType) {
+                        LibraryViewType.LIST -> {
+                            LazyColumn(
+                                state = lazyListState,
+                                contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues()
                             ) {
-                                filterContent()
-                            }
-
-                            item(
-                                key = "header",
-                                span = { GridItemSpan(maxLineSpan) },
-                                contentType = CONTENT_TYPE_HEADER
-                            ) {
-                                headerContent()
-                            }
-
-                            if (showLikedAndDownloadedPlaylist) {
                                 item(
-                                    key = likedPlaylist.id,
-                                    contentType = { CONTENT_TYPE_PLAYLIST }
+                                    key = "filter",
+                                    contentType = CONTENT_TYPE_HEADER
                                 ) {
-                                    AutoPlaylistGridItem(
-                                        playlist = likedPlaylist,
-                                        thumbnail = Icons.Rounded.Favorite,
-                                        fillMaxWidth = true,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                navController.navigate("auto_playlist/${likedPlaylist.id}")
-                                            }
-                                            .animateItem()
-                                    )
+                                    filterContent()
                                 }
 
                                 item(
-                                    key = downloadedPlaylist.id,
-                                    contentType = { CONTENT_TYPE_PLAYLIST }
+                                    key = "header",
+                                    contentType = CONTENT_TYPE_HEADER
                                 ) {
-                                    AutoPlaylistGridItem(
-                                        playlist = downloadedPlaylist,
-                                        thumbnail = Icons.Rounded.CloudDownload,
-                                        fillMaxWidth = true,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                navController.navigate("auto_playlist/${downloadedPlaylist.id}")
-                                            }
-                                            .animateItem()
-                                    )
+                                    headerContent()
                                 }
-                            }
 
-                            allItems.let { allItems ->
-                                if (allItems.isEmpty() && !showLikedAndDownloadedPlaylist) {
-                                    item {
-                                        EmptyPlaceholder(
-                                            icon = Icons.AutoMirrored.Rounded.List,
-                                            text = stringResource(R.string.library_empty),
-                                            modifier = Modifier.animateItem()
+                                if (showLikedAndDownloadedPlaylist) {
+                                    item(
+                                        key = likedPlaylist.id,
+                                        contentType = { CONTENT_TYPE_PLAYLIST }
+                                    ) {
+                                        AutoPlaylistListItem(
+                                            playlist = likedPlaylist,
+                                            thumbnail = Icons.Rounded.Favorite,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    navController.navigate("auto_playlist/${likedPlaylist.id}")
+                                                }
+                                                .animateItem()
+                                        )
+                                    }
+
+                                    item(
+                                        key = downloadedPlaylist.id,
+                                        contentType = { CONTENT_TYPE_PLAYLIST }
+                                    ) {
+                                        AutoPlaylistListItem(
+                                            playlist = downloadedPlaylist,
+                                            thumbnail = Icons.Rounded.CloudDownload,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    navController.navigate("auto_playlist/${downloadedPlaylist.id}")
+                                                }
+                                                .animateItem()
                                         )
                                     }
                                 }
 
-                                items(
-                                    items = allItems.distinctBy { it.hashCode() },
-                                    key = { it.hashCode() },
-                                    contentType = { CONTENT_TYPE_LIST }
-                                ) { item ->
-                                    when (item) {
-                                        is Album -> {
-                                            LibraryAlbumGridItem(
-                                                navController = navController,
-                                                menuState = menuState,
-                                                coroutineScope = coroutineScope,
-                                                album = item,
-                                                isActive = item.id == mediaMetadata?.album?.id,
-                                                isPlaying = isPlaying,
+                                allItems.let { allItems ->
+                                    if (allItems.isEmpty() && !showLikedAndDownloadedPlaylist) {
+                                        item {
+                                            EmptyPlaceholder(
+                                                icon = Icons.AutoMirrored.Rounded.List,
+                                                text = stringResource(R.string.library_empty),
                                                 modifier = Modifier.animateItem()
                                             )
                                         }
+                                    }
 
-                                        is Artist -> {
-                                            LibraryArtistGridItem(
-                                                navController = navController,
-                                                menuState = menuState,
-                                                coroutineScope = coroutineScope,
-                                                modifier = Modifier.animateItem(),
-                                                artist = item
-                                            )
+                                    items(
+                                        items = allItems.distinctBy { it.hashCode() },
+                                        key = { it.hashCode() },
+                                        contentType = { CONTENT_TYPE_LIST }
+                                    ) { item ->
+                                        when (item) {
+                                            is Album -> {
+                                                LibraryAlbumListItem(
+                                                    navController = navController,
+                                                    menuState = menuState,
+                                                    album = item,
+                                                    isActive = item.id == mediaMetadata?.album?.id,
+                                                    isPlaying = isPlaying,
+                                                    modifier = Modifier.animateItem()
+                                                )
+                                            }
+
+                                            is Artist -> {
+                                                LibraryArtistListItem(
+                                                    navController = navController,
+                                                    menuState = menuState,
+                                                    coroutineScope = coroutineScope,
+                                                    modifier = Modifier.animateItem(),
+                                                    artist = item
+                                                )
+                                            }
+
+                                            is Playlist -> {
+                                                LibraryPlaylistListItem(
+                                                    navController = navController,
+                                                    menuState = menuState,
+                                                    coroutineScope = coroutineScope,
+                                                    playlist = item,
+                                                    modifier = Modifier.animateItem()
+                                                )
+                                            }
+
+                                            else -> {}
                                         }
-
-                                        is Playlist -> {
-                                            LibraryPlaylistGridItem(
-                                                navController = navController,
-                                                menuState = menuState,
-                                                coroutineScope = coroutineScope,
-                                                playlist = item,
-                                                modifier = Modifier.animateItem()
-                                            )
-                                        }
-
-                                        else -> {}
                                     }
                                 }
                             }
+                            LazyColumnScrollbar(
+                                state = lazyListState,
+                            )
                         }
-                        LazyVerticalGridScrollbar(
-                            state = lazyGridState,
-                        )
+
+                        LibraryViewType.GRID -> {
+                            LazyVerticalGrid(
+                                state = lazyGridState,
+                                columns = GridCells.Adaptive(minSize = GridThumbnailHeight + 24.dp),
+                                contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues()
+                            ) {
+                                item(
+                                    key = "filter",
+                                    span = { GridItemSpan(maxLineSpan) },
+                                    contentType = CONTENT_TYPE_HEADER
+                                ) {
+                                    filterContent()
+                                }
+
+                                item(
+                                    key = "header",
+                                    span = { GridItemSpan(maxLineSpan) },
+                                    contentType = CONTENT_TYPE_HEADER
+                                ) {
+                                    headerContent()
+                                }
+
+                                if (showLikedAndDownloadedPlaylist) {
+                                    item(
+                                        key = likedPlaylist.id,
+                                        contentType = { CONTENT_TYPE_PLAYLIST }
+                                    ) {
+                                        AutoPlaylistGridItem(
+                                            playlist = likedPlaylist,
+                                            thumbnail = Icons.Rounded.Favorite,
+                                            fillMaxWidth = true,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    navController.navigate("auto_playlist/${likedPlaylist.id}")
+                                                }
+                                                .animateItem()
+                                        )
+                                    }
+
+                                    item(
+                                        key = downloadedPlaylist.id,
+                                        contentType = { CONTENT_TYPE_PLAYLIST }
+                                    ) {
+                                        AutoPlaylistGridItem(
+                                            playlist = downloadedPlaylist,
+                                            thumbnail = Icons.Rounded.CloudDownload,
+                                            fillMaxWidth = true,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    navController.navigate("auto_playlist/${downloadedPlaylist.id}")
+                                                }
+                                                .animateItem()
+                                        )
+                                    }
+                                }
+
+                                allItems.let { allItems ->
+                                    if (allItems.isEmpty() && !showLikedAndDownloadedPlaylist) {
+                                        item {
+                                            EmptyPlaceholder(
+                                                icon = Icons.AutoMirrored.Rounded.List,
+                                                text = stringResource(R.string.library_empty),
+                                                modifier = Modifier.animateItem()
+                                            )
+                                        }
+                                    }
+
+                                    items(
+                                        items = allItems.distinctBy { it.hashCode() },
+                                        key = { it.hashCode() },
+                                        contentType = { CONTENT_TYPE_LIST }
+                                    ) { item ->
+                                        when (item) {
+                                            is Album -> {
+                                                LibraryAlbumGridItem(
+                                                    navController = navController,
+                                                    menuState = menuState,
+                                                    coroutineScope = coroutineScope,
+                                                    album = item,
+                                                    isActive = item.id == mediaMetadata?.album?.id,
+                                                    isPlaying = isPlaying,
+                                                    modifier = Modifier.animateItem()
+                                                )
+                                            }
+
+                                            is Artist -> {
+                                                LibraryArtistGridItem(
+                                                    navController = navController,
+                                                    menuState = menuState,
+                                                    coroutineScope = coroutineScope,
+                                                    modifier = Modifier.animateItem(),
+                                                    artist = item
+                                                )
+                                            }
+
+                                            is Playlist -> {
+                                                LibraryPlaylistGridItem(
+                                                    navController = navController,
+                                                    menuState = menuState,
+                                                    coroutineScope = coroutineScope,
+                                                    playlist = item,
+                                                    modifier = Modifier.animateItem()
+                                                )
+                                            }
+
+                                            else -> {}
+                                        }
+                                    }
+                                }
+                            }
+                            LazyVerticalGridScrollbar(
+                                state = lazyGridState,
+                            )
+                        }
                     }
                 }
             }
-        }
 
-        Indicator(
-            isRefreshing = isSyncingRemotePlaylists || isSyncingRemoteAlbums || isSyncingRemoteArtists
-                    || isSyncingRemoteSongs || isSyncingRemoteLikedSongs,
-            state = pullRefreshState,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(LocalPlayerAwareWindowInsets.current.asPaddingValues()),
-        )
+            Indicator(
+                isRefreshing = isSyncingRemotePlaylists || isSyncingRemoteAlbums || isSyncingRemoteArtists
+                        || isSyncingRemoteSongs || isSyncingRemoteLikedSongs,
+                state = pullRefreshState,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(LocalPlayerAwareWindowInsets.current.asPaddingValues()),
+            )
+        }
     }
 }

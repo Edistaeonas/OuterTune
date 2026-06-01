@@ -95,7 +95,7 @@ interface AlbumsDao : ArtistsDao {
     @Query("""
         SELECT album.*, count(song.dateDownload) downloadCount
         FROM album
-            LEFT JOIN song ON song.albumId = album.id
+            LEFT JOIN song ON song.id = album.id
         WHERE album.id = :albumId
         GROUP BY album.id
     """)
@@ -134,18 +134,24 @@ interface AlbumsDao : ArtistsDao {
     fun _getAlbum(query: SupportSQLiteQuery): Flow<List<Album>>
 
     fun albums(filter: AlbumFilter, sortType: AlbumSortType, descending: Boolean): Flow<List<Album>> {
+        val effectiveDescending = when (sortType) {
+            AlbumSortType.CREATE_DATE, AlbumSortType.YEAR -> descending
+            else -> !descending
+        }
+        val sortOrder = if (effectiveDescending) "DESC" else "ASC"
+
         val orderBy = when (sortType) {
-            AlbumSortType.CREATE_DATE -> "album.rowId ASC"
-            AlbumSortType.NAME -> "album.title COLLATE NOCASE ASC"
+            AlbumSortType.CREATE_DATE -> "album.rowId $sortOrder"
+            AlbumSortType.NAME -> "album.title COLLATE NOCASE $sortOrder"
             AlbumSortType.ARTIST -> """(
                                         SELECT LOWER(GROUP_CONCAT(name, ''))
                                         FROM artist
                                         WHERE id IN (SELECT artistId FROM album_artist_map WHERE albumId = album.id)
                                         ORDER BY name
-                                    ) COLLATE NOCASE ASC"""
-            AlbumSortType.YEAR -> "album.year ASC"
-            AlbumSortType.SONG_COUNT -> "album.songCount ASC"
-            AlbumSortType.LENGTH -> "album.duration ASC"
+                                    ) COLLATE NOCASE $sortOrder"""
+            AlbumSortType.YEAR -> "album.year $sortOrder"
+            AlbumSortType.SONG_COUNT -> "album.songCount $sortOrder"
+            AlbumSortType.LENGTH -> "album.duration $sortOrder"
         }
 
         val where = when (filter) {
@@ -164,14 +170,21 @@ interface AlbumsDao : ArtistsDao {
             ORDER BY $orderBy
         """)
 
-        return _getAlbum(query).map { it.reversed(descending) }
+        return _getAlbum(query).map { it.reversed(false) } // Sorting is handled in SQL now
     }
 
     fun albumsInLibraryAsc() = albums(AlbumFilter.LIBRARY, AlbumSortType.CREATE_DATE, false)
     fun albumsLikedAsc() = albums(AlbumFilter.LIKED, AlbumSortType.CREATE_DATE, false)
 
     @Query("SELECT * FROM album WHERE title = :name")
-    fun albumsByName(name: String): AlbumEntity?
+    fun albumsByName(name: String): List<AlbumEntity> //instead of AlbumEntity?
+
+    @Query("SELECT artistId FROM album_artist_map WHERE albumId = :albumId")
+    fun getAlbumArtistIds(albumId: String): List<String>
+
+    @Transaction
+    @Query("SELECT artist.* FROM artist JOIN album_artist_map ON artist.id = album_artist_map.artistId WHERE albumId = :albumId")
+    fun getArtistsByAlbum(albumId: String): List<ArtistEntity>
 
     @Transaction
     @Query(

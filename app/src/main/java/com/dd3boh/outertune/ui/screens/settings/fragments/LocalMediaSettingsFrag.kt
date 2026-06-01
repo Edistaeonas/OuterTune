@@ -8,6 +8,7 @@
 
 package com.dd3boh.outertune.ui.screens.settings.fragments
 
+import android.util.Log
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -33,6 +35,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Interests
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.TextFields
@@ -63,24 +66,32 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat.requestPermissions
+import androidx.datastore.preferences.core.edit
+import androidx.documentfile.provider.DocumentFile
 import com.dd3boh.outertune.LocalDatabase
 import com.dd3boh.outertune.LocalPlayerConnection
 import com.dd3boh.outertune.LocalSnackbarHostState
 import com.dd3boh.outertune.R
+import com.dd3boh.outertune.constants.AutomaticScannerKey
 import com.dd3boh.outertune.constants.DownloadExtraPathKey
 import com.dd3boh.outertune.constants.DownloadPathKey
 import com.dd3boh.outertune.constants.ENABLE_FFMETADATAEX
 import com.dd3boh.outertune.constants.ExcludedScanPathsKey
 import com.dd3boh.outertune.constants.LastLocalScanKey
+import com.dd3boh.outertune.constants.LookupYtmArtistsKey
 import com.dd3boh.outertune.constants.SCANNER_OWNER_LM
 import com.dd3boh.outertune.constants.ScanPathsKey
 import com.dd3boh.outertune.constants.ScannerImpl
 import com.dd3boh.outertune.constants.ScannerImplKey
 import com.dd3boh.outertune.constants.ScannerMatchCriteria
+import com.dd3boh.outertune.constants.ScannerOnlyNewFilesKey
 import com.dd3boh.outertune.constants.ScannerSensitivityKey
 import com.dd3boh.outertune.constants.ScannerStrictExtKey
 import com.dd3boh.outertune.constants.ScannerStrictFilePathsKey
 import com.dd3boh.outertune.constants.ThumbnailCornerRadius
+import com.dd3boh.outertune.constants.ArtistLinkingSensitivity
+import com.dd3boh.outertune.constants.ArtistLinkingSensitivityKey
+import com.dd3boh.outertune.models.SongTempData
 import com.dd3boh.outertune.ui.component.EnumListPreference
 import com.dd3boh.outertune.ui.component.PreferenceEntry
 import com.dd3boh.outertune.ui.component.SwitchPreference
@@ -102,10 +113,14 @@ import com.dd3boh.outertune.utils.scanners.ScannerAbortException
 import com.dd3boh.outertune.utils.scanners.absoluteFilePathFromUri
 import com.dd3boh.outertune.utils.scanners.stringFromUriList
 import com.dd3boh.outertune.utils.scanners.uriListFromString
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 import java.time.ZoneOffset
+import kotlinx.coroutines.flow.first
+import com.dd3boh.outertune.utils.dataStore
+import com.dd3boh.outertune.utils.reportException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 
 @Composable
@@ -116,19 +131,14 @@ fun ColumnScope.LocalScannerFrag() {
     val playerConnection = LocalPlayerConnection.current
     val snackbarHostState = LocalSnackbarHostState.current
 
-    // scanner vars
-    val scannerState by scannerState.collectAsState()
+    // --- DEFINITIVE FIX: Rename the collected state to avoid shadowing ---
+    val scannerStateValue by scannerState.collectAsState()
     val scannerProgressTotal by scannerProgressTotal.collectAsState()
     val scannerProgressCurrent by scannerProgressCurrent.collectAsState()
 
-    var scannerFailure = false
+    var scannerFailure by remember { mutableStateOf(false) }
     var mediaPermission by remember { mutableStateOf(true) }
 
-    /**
-     * True = include folders
-     * False = exclude folders
-     * Null = don't show dialog
-     */
     var showAddFolderDialog: Boolean? by remember {
         mutableStateOf(null)
     }
@@ -140,18 +150,209 @@ fun ColumnScope.LocalScannerFrag() {
     )
     val scannerImpl by rememberEnumPreference(
         key = ScannerImplKey,
-        defaultValue = ScannerImpl.TAGLIB
+        defaultValue = ScannerImpl.MEDIASTORE
     )
     val strictExtensions by rememberPreference(ScannerStrictExtKey, defaultValue = false)
     val strictFilePaths by rememberPreference(ScannerStrictFilePathsKey, defaultValue = false)
     val downloadPath by rememberPreference(DownloadPathKey, "")
     val (scanPaths, onScanPathsChange) = rememberPreference(ScanPathsKey, defaultValue = "")
-    val (excludedScanPaths, onExcludedScanPathsChange) = rememberPreference(ExcludedScanPathsKey, defaultValue = "")
+    val (excludedScanPaths, onExcludedScanPathsChange) = rememberPreference(
+        ExcludedScanPathsKey,
+        defaultValue = ""
+    )
     val dlPathExtra by rememberPreference(DownloadExtraPathKey, "")
 
     var fullRescan by remember { mutableStateOf(false) }
-
+    val (lookupYtmArtists, onLookupYtmArtistsChange) = rememberPreference(
+        LookupYtmArtistsKey,
+        defaultValue = false
+    )
+    val (onlyScanNew, onOnlyScanNewChange) = rememberPreference(
+        ScannerOnlyNewFilesKey,
+        defaultValue = false
+    )
     val (lastLocalScan, onLastLocalScanChange) = rememberPreference(LastLocalScanKey, 0L)
+
+    LaunchedEffect(onlyScanNew) {
+        if (onlyScanNew) {
+            // checking this check box should do this on the other 2 checkboxes:
+            fullRescan = false
+            onLookupYtmArtistsChange(true)
+        }
+    }
+    LaunchedEffect(fullRescan) {
+        if (fullRescan) {
+            // checking this check box should disable the Only Scan New checkbox:
+            onOnlyScanNewChange(false)
+        }
+    }
+    LaunchedEffect(lookupYtmArtists) {
+        if (!lookupYtmArtists) {
+            // if the youtube linking is unchecked, we should also uncheck the "Only Scan New" checkbox
+            onOnlyScanNewChange(false)
+        }
+    }
+
+    // This is the new, unified scanner function
+    fun runScanner(
+        isFullRescan: Boolean,
+        scanPathsToUse: String,
+        excludedScanPathsToUse: String,
+        isOnlyScanNew: Boolean
+    ) {
+        // ... (Permission check logic is unchanged)
+        if (context.checkSelfPermission(MEDIA_PERMISSION_LEVEL) != PackageManager.PERMISSION_GRANTED) {
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar(
+                    message = context.getString(R.string.scanner_missing_storage_perm),
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Short
+                )
+            }
+            requestPermissions(
+                context as Activity,
+                arrayOf(MEDIA_PERMISSION_LEVEL), PackageManager.PERMISSION_GRANTED
+            )
+            mediaPermission = false
+            return
+        } else {
+            mediaPermission = true
+        }
+
+        scannerFailure = false
+        playerConnection?.player?.pause()
+
+        playerConnection?.scope?.launch(lmScannerCoroutine) {
+            if (scannerState.value in 1..5) {
+                return@launch
+            }
+
+            try {
+                // ... (The main scanning logic inside the try block is unchanged)
+                Log.i("runScanner", "Starting main scan task...")
+                val scanner = getScanner(context, scannerImpl, SCANNER_OWNER_LM)
+                // ... (rest of the try block)
+                val processedSongs: ArrayList<SongTempData>
+                if (scannerImpl == ScannerImpl.MEDIASTORE) {
+                    Log.i("runScanner", "Using MEDIASTORE scanner path.")
+                    processedSongs = scanner.fullMediaStoreSync(
+                        database,
+                        uriListFromString(scanPathsToUse),
+                        uriListFromString(excludedScanPathsToUse),
+                        scannerSensitivity,
+                        strictFilePaths,
+                        refreshExisting = isFullRescan,
+                        isAutomaticScan = false
+                    )
+                } else {
+                    Log.i("runScanner", "Using file-based scanner path.")
+                    val uris = scanner.scanLocal(scanPathsToUse, excludedScanPathsToUse)
+                    processedSongs = when {
+                        isOnlyScanNew -> {
+                            // This is your new "Smart Scan" logic
+                            scanner.smartSyncNewFiles(
+                                database,
+                                uris,
+                                scannerSensitivity,
+                                strictExtensions,
+                                strictFilePaths
+                            )
+                        }
+
+                        isFullRescan -> {
+                            // This is the existing Full Scan
+                            scanner.fullSync(
+                                database,
+                                uris,
+                                scannerSensitivity,
+                                strictExtensions,
+                                strictFilePaths
+                            )
+                        }
+
+                        else -> {
+                            // This is the existing Quick Scan
+                            scanner.quickSync(
+                                database,
+                                uris,
+                                scannerSensitivity,
+                                strictExtensions,
+                                strictFilePaths
+                            )
+                        }
+                    }
+                }
+
+                // This bridges the gap between the Sync phase and the Finalize/Link phase.
+                scannerState.value = 4
+
+                if (lookupYtmArtists && !scannerRequestCancel) {
+                    Log.i("runScanner", "Starting YouTube artist linking task.")
+                    snackbarHostState.showSnackbar(
+                        message = context.getString(R.string.scanner_ytm_link_start),
+                        withDismissAction = true,
+                        duration = SnackbarDuration.Long
+                    )
+                }
+
+                Log.i("FolderScan", "Main scan complete. Starting finalize/de-duplication step.")
+                scanner.finalize(database, processedSongs)
+                Log.i(
+                    "FolderScan",
+                    "De-duplication complete. Starting YouTube artist linking task."
+                )
+
+                if (lookupYtmArtists && !scannerRequestCancel) {
+                    Log.i("runScanner", "Starting YouTube artist linking background task.")
+
+                    withContext(Dispatchers.IO) {
+                        scanner.localToRemoteArtist(database)
+                    }
+                    Log.i("FolderScan", "YouTube artist linking task complete.")
+
+                    val unlinkedCount = withContext(Dispatchers.IO) {
+                        database.getUnlinkedLocalArtistCount()
+                    }
+
+                    if (unlinkedCount > 0) {
+                        val message = context.resources.getQuantityString(
+                            R.plurals.scanner_unlinked_artists_report,
+                            unlinkedCount,
+                            unlinkedCount
+                        )
+                        snackbarHostState.showSnackbar(
+                            message = message,
+                            duration = SnackbarDuration.Indefinite,
+                            withDismissAction = true // Add an 'X' or dismiss action
+                        )
+                        Log.i("FolderScan", message)
+                    }
+                }
+
+            } catch (e: ScannerAbortException) {
+                Log.w("runScanner", "Scanner was aborted by user request.")
+            } catch (e: Exception) {
+                scannerFailure = true
+                reportException(e)
+            } finally {
+                Log.i("runScanner", "All tasks finished. Cleaning up.")
+                val lastScanTime = System.currentTimeMillis()
+                onLastLocalScanChange(lastScanTime)
+
+                val message = context.getString(R.string.scanner_finished)
+                snackbarHostState.showSnackbar(
+                    message = message,
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Short
+                )
+                // This now correctly modifies the original MutableStateFlow
+                scannerState.value = if (scannerFailure) -1 else 0
+                scannerRequestCancel = false
+                destroyScanner(SCANNER_OWNER_LM)
+                clearDtCache()
+            }
+        }
+    }
 
     LaunchedEffect(scanPaths) {
         if (scanPaths.isBlank()) {
@@ -159,138 +360,29 @@ fun ColumnScope.LocalScannerFrag() {
         }
     }
 
-    // scanner
+    // --- All UI code below now uses scannerStateValue ---
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp),
-        verticalAlignment = Alignment.CenterVertically, // WHY WON'T YOU CENTER
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Button(
             onClick = {
-                // cancel button
-                if (scannerState > 0) {
+                // Change: Include state 4 in the "Cancelable" range
+                if (scannerStateValue in 1..5) {
                     scannerRequestCancel = true
                     return@Button
                 }
-
-                // check permission
-                if (context.checkSelfPermission(MEDIA_PERMISSION_LEVEL)
-                    != PackageManager.PERMISSION_GRANTED
-                ) {
-                    coroutineScope.launch {
-                        snackbarHostState.showSnackbar(
-                            message = context.getString(R.string.scanner_missing_storage_perm),
-                            withDismissAction = true,
-                            duration = SnackbarDuration.Short
-                        )
-                    }
-
-                    requestPermissions(
-                        context as Activity,
-                        arrayOf(MEDIA_PERMISSION_LEVEL), PackageManager.PERMISSION_GRANTED
-                    )
-
-                    mediaPermission = false
-                    return@Button
-                } else if (context.checkSelfPermission(MEDIA_PERMISSION_LEVEL)
-                    == PackageManager.PERMISSION_GRANTED
-                ) {
-                    mediaPermission = true
-                }
-
-                scannerFailure = false
-
-                playerConnection?.player?.pause()
-
-                coroutineScope.launch(lmScannerCoroutine) {
-                    if (scannerState > 0) {
-                        return@launch
-                    }
-                    // full rescan
-                    if (fullRescan) {
-                        try {
-                            val scanner = getScanner(context, scannerImpl, SCANNER_OWNER_LM)
-                            if (scannerImpl == ScannerImpl.MEDIASTORE) {
-                                scanner.fullMediaStoreSync(
-                                    database,
-                                    uriListFromString(scanPaths),
-                                    uriListFromString(excludedScanPaths),
-                                    scannerSensitivity,
-                                    strictExtensions,
-                                    strictFilePaths,
-                                    true,
-                                )
-                            } else {
-                                val uris = scanner.scanLocal(scanPaths, excludedScanPaths)
-                                scanner.fullSync(database, uris, scannerSensitivity, strictExtensions, strictFilePaths)
-                            }
-
-                            delay(1000)
-                        } catch (e: ScannerAbortException) {
-                            scannerFailure = true
-
-                            snackbarHostState.showSnackbar(
-                                message = "${context.getString(R.string.scanner_scan_fail)}: ${e.message}",
-                                withDismissAction = true,
-                                duration = SnackbarDuration.Short
-                            )
-                        } finally {
-                            clearDtCache()
-                            destroyScanner(SCANNER_OWNER_LM)
-                        }
-                    } else {
-                        // quick scan
-                        try {
-                            val scanner = getScanner(context, scannerImpl, SCANNER_OWNER_LM)
-
-                            if (scannerImpl == ScannerImpl.MEDIASTORE) {
-                                scanner.fullMediaStoreSync(
-                                    database,
-                                    uriListFromString(scanPaths),
-                                    uriListFromString(excludedScanPaths),
-                                    scannerSensitivity,
-                                    strictExtensions,
-                                    strictFilePaths,
-                                    false
-                                )
-                            } else {
-                                val uris = scanner.scanLocal(scanPaths, excludedScanPaths)
-                                scanner.quickSync(
-                                    database, uris, scannerSensitivity, strictExtensions,
-                                    strictFilePaths
-                                )
-                            }
-
-                            delay(1000)
-                        } catch (e: ScannerAbortException) {
-                            scannerFailure = true
-
-                            snackbarHostState.showSnackbar(
-                                message = "${context.getString(R.string.scanner_scan_fail)}: ${e.message}",
-                                withDismissAction = true,
-                                duration = SnackbarDuration.Short
-                            )
-                        } finally {
-                            clearDtCache()
-                            destroyScanner(SCANNER_OWNER_LM)
-                        }
-                    }
-
-                    // post scan actions
-                    playerConnection?.service?.initQueue()
-
-                    onLastLocalScanChange(LocalDateTime.now().toInstant(ZoneOffset.UTC).toEpochMilli())
-                }
+                Log.i("runScanner", "Start Full Scan")
+                runScanner(fullRescan, scanPaths, excludedScanPaths, onlyScanNew)
             }
         ) {
             Text(
-                text = if ((scannerState > 0 && scannerState < 4) || scannerState == 5) {
+                text = if (scannerStateValue in 1..5) {
                     stringResource(R.string.action_cancel)
                 } else if (scannerFailure) {
                     stringResource(R.string.scanner_scan_fail)
-                } else if (scannerState >= 4) {
-                    stringResource(R.string.scanner_progress_complete)
                 } else if (!mediaPermission) {
                     stringResource(R.string.scanner_missing_storage_perm)
                 } else {
@@ -299,57 +391,62 @@ fun ColumnScope.LocalScannerFrag() {
             )
         }
 
-
-        // progress indicator
-        if (scannerState <= 0) {
-            return@Row
-        }
-
-        Spacer(Modifier.width(8.dp))
-
-        CircularProgressIndicator(
-            modifier = Modifier
-                .size(32.dp),
-            color = MaterialTheme.colorScheme.secondary,
-            trackColor = MaterialTheme.colorScheme.surfaceVariant,
-        )
-
-        Spacer(Modifier.width(8.dp))
-
-        Column {
-//            val isSyncing = scannerState > 3
-            Text(
-                text = when (scannerState) {
-                    1 -> stringResource(R.string.scanner_progress_discovering)
-                    3 -> stringResource(R.string.scanner_progress_syncing)
-                    5 -> stringResource(R.string.scanner_ytm_link_start)
-                    else -> stringResource(R.string.scanner_progress_processing)
-                },
+        if (scannerStateValue in 1..5) {
+            Spacer(Modifier.width(8.dp))
+            CircularProgressIndicator(
+                modifier = Modifier.size(32.dp),
                 color = MaterialTheme.colorScheme.secondary,
-                fontSize = 12.sp
+                trackColor = MaterialTheme.colorScheme.surfaceVariant,
             )
-            Text(
-                text = "${if (scannerProgressCurrent >= 0) "$scannerProgressCurrent" else "—"}/${
-                    if (scannerProgressTotal >= 0) {
-                        if (scannerState == 1) {
-                            pluralStringResource(
-                                R.plurals.scanner_n_song_found, scannerProgressTotal, scannerProgressTotal
-                            )
-                        } else {
-                            pluralStringResource(
-                                R.plurals.scanner_n_song_processed, scannerProgressTotal, scannerProgressTotal
-                            )
-                        }
+            Spacer(Modifier.width(8.dp))
+            Column {
+                Text(
+                    text = when (scannerStateValue) {
+                        1 -> stringResource(R.string.scanner_progress_discovering)
+                        3 -> stringResource(R.string.scanner_progress_syncing)
+                        4 -> stringResource(R.string.scanner_progress_processing)
+                        5 -> stringResource(R.string.scanner_ytm_link_start)
+                        else -> stringResource(R.string.scanner_progress_processing)
+                    },
+                    color = MaterialTheme.colorScheme.secondary,
+                    fontSize = 12.sp
+                )
+                Text(
+                    text = if (scannerStateValue == 5) {
+                        pluralStringResource(
+                            R.plurals.scanner_ytm_link_progress,
+                            scannerProgressTotal,
+                            scannerProgressCurrent,
+                            scannerProgressTotal
+                        )
                     } else {
-                        "—"
-                    }
-                }",
-                color = MaterialTheme.colorScheme.secondary,
-                fontSize = 12.sp
-            )
+                        "${if (scannerProgressCurrent >= 0) "$scannerProgressCurrent" else "—"}/${
+                            if (scannerProgressTotal >= 0) {
+                                if (scannerStateValue == 1) {
+                                    pluralStringResource(
+                                        R.plurals.scanner_n_song_found,
+                                        scannerProgressTotal,
+                                        scannerProgressTotal
+                                    )
+                                } else {
+                                    pluralStringResource(
+                                        R.plurals.scanner_n_song_processed,
+                                        scannerProgressTotal,
+                                        scannerProgressTotal
+                                    )
+                                }
+                            } else {
+                                "—"
+                            }
+                        }"
+                    },
+                    color = MaterialTheme.colorScheme.secondary,
+                    fontSize = 12.sp
+                )
+            }
         }
     }
-    // scanner checkboxes
+    // ... (rest of the UI code is unchanged)
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -359,23 +456,55 @@ fun ColumnScope.LocalScannerFrag() {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Checkbox(
+                checked = onlyScanNew,
+                onCheckedChange = onOnlyScanNewChange
+            )
+            Text(
+                stringResource(R.string.scanner_only_new_files),
+                color = MaterialTheme.colorScheme.secondary,
+                fontSize = 14.sp
+            )
+        }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(
                 checked = fullRescan,
                 onCheckedChange = { fullRescan = it }
             )
             Text(
-                stringResource(R.string.scanner_variant_rescan), color = MaterialTheme.colorScheme.secondary,
+                stringResource(R.string.scanner_variant_rescan),
+                color = MaterialTheme.colorScheme.secondary,
+                fontSize = 14.sp
+            )
+        }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(
+                checked = lookupYtmArtists,
+                onCheckedChange = onLookupYtmArtistsChange,
+            )
+            Text(
+                stringResource(R.string.scanner_online_artist_linking),
+                color = MaterialTheme.colorScheme.secondary,
                 fontSize = 14.sp
             )
         }
     }
 
+
     // file path selector
-    PreferenceEntry(
-        title = { Text(stringResource(R.string.scan_paths_title)) },
-        onClick = {
-            showAddFolderDialog = true
-        },
-    )
+// 1. A real, working Button to configure scan locations.
+    Button(        onClick = { showAddFolderDialog = true },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp)
+    ) {
+        Text(text = stringResource(R.string.scan_paths_title))
+    }
 
     Row(
         modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
@@ -443,16 +572,56 @@ fun ColumnScope.LocalScannerFrag() {
                 showAddFolderDialog = null
                 tempScanPaths.clear()
             },
+//            onConfirm = {
+//                val newPathsString = stringFromUriList(tempScanPaths.toList())
+//                showAddFolderDialog = null
+//                tempScanPaths.clear()
+//
+//                if (showAddFolderDialog as Boolean) {
+//                    onScanPathsChange(newPathsString)
+//                    // Run scan with the NEW inclusion paths and OLD exclusion paths
+//                    runScanner(isFullRescan = false, scanPathsToUse = newPathsString, excludedScanPathsToUse = excludedScanPaths)
+//                    // Run a second time, to make sure...
+//                    runScanner(isFullRescan = false, scanPathsToUse = newPathsString, excludedScanPathsToUse = excludedScanPaths)
+//                } else {
+//                    onExcludedScanPathsChange(newPathsString)
+//                    // Run scan with the OLD inclusion paths and NEW exclusion paths
+//                    runScanner(isFullRescan = false, scanPathsToUse = scanPaths, excludedScanPathsToUse = newPathsString)
+//                    // Run a second time, to make sure...
+//                    runScanner(isFullRescan = false, scanPathsToUse = scanPaths, excludedScanPathsToUse = newPathsString)
+//                }
+//            },
+
             onConfirm = {
-                if (showAddFolderDialog as Boolean) {
-                    onScanPathsChange(stringFromUriList(tempScanPaths.toList()))
-                } else {
-                    onExcludedScanPathsChange(stringFromUriList(tempScanPaths.toList()))
-                }
+                val newPathsString = stringFromUriList(tempScanPaths.toList())
+                val isIncludingFolders = showAddFolderDialog
 
                 showAddFolderDialog = null
                 tempScanPaths.clear()
+
+                // --- DEFINITIVE FIX: Implement the user's requested behavior ---
+                // Do NOT run a scan automatically. Just save the path.
+                if (isIncludingFolders == true) {
+                    onScanPathsChange(newPathsString)
+                } else if (isIncludingFolders == false) {
+                    onExcludedScanPathsChange(newPathsString)
+                }
+
+                // set the scan options to default to a full, smart scan.
+                fullRescan = true
+                onLookupYtmArtistsChange(true)
+
+                // Inform the user what to do next.
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar(
+                        context.getString(R.string.scanner_manual_scan_advice),
+                        withDismissAction = true,
+                        duration = SnackbarDuration.Indefinite
+                    )
+                }
+                // --- END FIX ---
             },
+
             onReset = {
                 // clear all, let user select a new path on their own will
                 tempScanPaths.clear()
@@ -464,23 +633,23 @@ fun ColumnScope.LocalScannerFrag() {
             isInputValid = tempScanPaths.toList().all {
                 // scan path cannot be the download directory or subdir of download directory
                 !it.toString().contains(uriListFromString(downloadPath).firstOrNull().toString())
-                        && uriListFromString(dlPathExtra).none { f -> it.toString().contains(f.toString()) }
-            } || tempScanPaths.isEmpty(),
-            modifier = Modifier
-                .verticalScroll(rememberScrollState()),
+                        && uriListFromString(dlPathExtra).none { f ->
+                    it.toString().contains(f.toString())
+                }
+            } || tempScanPaths.isEmpty()
         ) {
+            val scrollState = rememberScrollState()
             val dirPickerLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.OpenDocumentTree()
             ) { uri ->
                 if (uri == null) return@rememberLauncherForActivityResult
                 if (tempScanPaths.any { it.toString() == uri.toString() }) return@rememberLauncherForActivityResult
-
                 val contentResolver = context.contentResolver
-                val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                val takeFlags: Int =
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 contentResolver.takePersistableUriPermission(uri, takeFlags)
                 tempScanPaths.add(uri)
             }
-
             Text(
                 text = stringResource(R.string.scan_paths_description),
                 style = MaterialTheme.typography.bodySmall,
@@ -497,12 +666,15 @@ fun ColumnScope.LocalScannerFrag() {
                         MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
                         RoundedCornerShape(ThumbnailCornerRadius)
                     )
+                    .heightIn(max = 280.dp) // Add this line to limit the height
+                    .verticalScroll(scrollState) // Add this line to make it scroll
             ) {
                 tempScanPaths.forEach {
-                    !it.toString().contains(uriListFromString(downloadPath).firstOrNull().toString())
-                            && uriListFromString(dlPathExtra).none { f -> it.toString().contains(f.toString()) }
-                    val valid = !it.toString().contains(uriListFromString(downloadPath).firstOrNull().toString())
-                            && uriListFromString(dlPathExtra).none { f -> it.toString().contains(f.toString()) }
+                    val valid = !it.toString()
+                        .contains(uriListFromString(downloadPath).firstOrNull().toString())
+                            && uriListFromString(dlPathExtra).none { f ->
+                        it.toString().contains(f.toString())
+                    }
                     Row(
                         modifier = Modifier
                             .padding(horizontal = 8.dp)
@@ -534,12 +706,10 @@ fun ColumnScope.LocalScannerFrag() {
                 Button(onClick = { dirPickerLauncher.launch(null) }) {
                     Text(stringResource(R.string.scan_paths_add_folder))
                 }
-
                 InfoLabel(
                     text = stringResource(R.string.scan_paths_tooltip),
                     modifier = Modifier.padding(top = 8.dp)
                 )
-
                 if (tempScanPaths.toList().any {
                         it.toString() == uriListFromString(downloadPath).firstOrNull().toString()
                     }) {
@@ -554,6 +724,8 @@ fun ColumnScope.LocalScannerFrag() {
     }
 }
 
+
+
 @Composable
 fun ColumnScope.LocalScannerExtraFrag() {
     val context = LocalContext.current
@@ -564,11 +736,35 @@ fun ColumnScope.LocalScannerExtraFrag() {
     )
     val (scannerImpl, onScannerImplChange) = rememberEnumPreference(
         key = ScannerImplKey,
-        defaultValue = ScannerImpl.TAGLIB
+        defaultValue = ScannerImpl.MEDIASTORE
     )
     val (strictExtensions, onStrictExtensionsChange) = rememberPreference(ScannerStrictExtKey, defaultValue = false)
     val (strictFilePaths, onStrictFilePathsChange) = rememberPreference(ScannerStrictFilePathsKey, defaultValue = false)
 
+    val (artistLinkingSensitivity, onArtistLinkingSensitivityChange) = rememberEnumPreference(
+        key = ArtistLinkingSensitivityKey,
+        defaultValue = ArtistLinkingSensitivity.SIMPLE
+    )
+
+// Artist linking sensitivity
+    EnumListPreference(
+        title = { Text(stringResource(R.string.artist_linking_sensitivity_title)) },
+        icon = { Icon(Icons.Rounded.Interests, null) }, // You can change the icon if preferred
+        selectedValue = artistLinkingSensitivity,
+        onValueSelected = onArtistLinkingSensitivityChange,
+        valueText = {
+            when (it) {
+                ArtistLinkingSensitivity.SIMPLE -> stringResource(R.string.artist_linking_simple)
+                ArtistLinkingSensitivity.COMPLEX -> stringResource(R.string.artist_linking_complex)
+            }
+        }
+    )
+    InfoLabel(
+        text = when (artistLinkingSensitivity) {
+            ArtistLinkingSensitivity.SIMPLE -> stringResource(R.string.artist_linking_simple_description)
+            ArtistLinkingSensitivity.COMPLEX -> stringResource(R.string.artist_linking_complex_description)
+        }
+    )
 
     // scanner sensitivity
     EnumListPreference(

@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 20,
-    "identityHash": "1f19684463889aeea6f5078a8d5285a0",
+    "identityHash": "142d136f1bf80b5a14e4fba354f20165",
     "entities": [
       {
         "tableName": "song",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `duration` INTEGER NOT NULL, `thumbnailUrl` TEXT, `inLibrary` INTEGER, `isLocal` INTEGER NOT NULL DEFAULT false, `localPath` TEXT, `dateDownload` INTEGER, `liked` INTEGER NOT NULL, `likedDate` INTEGER, `trackNumber` INTEGER, `discNumber` INTEGER, `albumId` TEXT, `albumName` TEXT, `year` INTEGER, `date` INTEGER, `dateModified` INTEGER, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `duration` INTEGER NOT NULL, `thumbnailUrl` TEXT, `inLibrary` INTEGER, `isLocal` INTEGER NOT NULL DEFAULT false, `localPath` TEXT, `dateDownload` INTEGER, `liked` INTEGER NOT NULL, `likedDate` INTEGER, `trackNumber` INTEGER, `discNumber` INTEGER, `albumId` TEXT, `albumName` TEXT, `year` INTEGER, `date` INTEGER, `dateModified` INTEGER, `parentArtist` TEXT, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -98,6 +98,11 @@
             "fieldPath": "dateModified",
             "columnName": "dateModified",
             "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "parentArtist",
+            "columnName": "parentArtist",
+            "affinity": "TEXT"
           }
         ],
         "primaryKey": {
@@ -1303,7 +1308,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '1f19684463889aeea6f5078a8d5285a0')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '142d136f1bf80b5a14e4fba354f20165')"
     ]
   }
 }

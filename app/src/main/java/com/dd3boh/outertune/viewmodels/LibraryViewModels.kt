@@ -51,12 +51,11 @@ import com.dd3boh.outertune.db.entities.Song
 import com.dd3boh.outertune.extensions.toEnum
 import com.dd3boh.outertune.models.DirectoryTree
 import com.dd3boh.outertune.ui.utils.STORAGE_ROOT
-import com.dd3boh.outertune.ui.utils.cacheDirectoryTree
 import com.dd3boh.outertune.ui.utils.getDirectoryTree
 import com.dd3boh.outertune.utils.SyncUtils
 import com.dd3boh.outertune.utils.dataStore
 import com.dd3boh.outertune.utils.reportException
-import com.dd3boh.outertune.utils.scanners.LocalMediaScanner.Companion.refreshLocal
+import com.dd3boh.outertune.utils.scanners.LocalMediaScanner
 import com.zionhuang.innertube.YouTube
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -131,15 +130,39 @@ class LibraryFoldersViewModel @Inject constructor(
     var uiInit = false
     var lastLocalScan = 0L
 
+    init {
+        viewModelScope.launch(Dispatchers.IO) {
+            Log.d("FolderScan", "ViewModel init: Calling getLocalSongs() for path '$path'")
+            getLocalSongs()
+            getSongCount()
+        }
+    }
+
     /**
      * Trigger a scan of local directory
      */
     suspend fun getLocalSongs(dir: String? = null) {
-        Log.d(TAG, "Loading folders page: ${dir ?: path}")
-        val dt = refreshLocal(database, dir ?: path)
-        dt.isSkeleton = false
-        cacheDirectoryTree(dt)
-        localSongDirectoryTree.value = dt
+        val currentPath = dir ?: path
+        Log.i(TAG, "Loading folders page for path: $currentPath")
+
+        // --- Correctly build and find the directory tree ---
+        // 1. Fetch ALL local songs from the database to build a complete and fresh tree.
+        val allLocalSongs = database.allLocalSongsFlow().first()
+        Log.i(TAG, "Fetched ${allLocalSongs.size} total songs to build the tree.")
+
+        // 2. Use the existing, correct companion function to build the master tree.
+        val masterTree = LocalMediaScanner.buildDirectoryTree(allLocalSongs)
+
+        // 3. Find the specific subdirectory the user is currently viewing.
+        //    We must remove the leading "/storage/" because the tree's root is already "/storage".
+        Log.i(TAG, "We must remove the leading  /storage/  because the tree's root is already  /storage" )
+        val displayTree = masterTree.getSubDir(currentPath.removePrefix("/storage/").removePrefix("/"))
+        Log.i(TAG, "Found subdirectory '${displayTree.currentDir}' with ${displayTree.files.size} files.")
+
+        // 4. Update the UI state.
+        displayTree.isSkeleton = false
+        localSongDirectoryTree.value = displayTree
+        localSongDtSongCount.value = displayTree.getTotalSongCount()
     }
 
     /**
@@ -147,7 +170,13 @@ class LibraryFoldersViewModel @Inject constructor(
      */
     suspend fun getSongCount(dir: String? = null) {
         Log.d(TAG, "Loading folder song count: ${dir ?: path}")
-        localSongDtSongCount.value = database.localSongCountInPath(dir ?: path).first()
+        // old way, not giving the right number of songs at the top level:  localSongDtSongCount.value = database.localSongCountInPath(dir ?: path).first()
+
+        // --- DEFINITIVE FIX: Use the recursive counter on the already-fetched DirectoryTree ---
+        val totalCount = localSongDirectoryTree.value.getTotalSongCount()
+        Log.i("FolderScan", "getSongCount: Calculating total songs. Found: $totalCount")
+        localSongDtSongCount.value = totalCount
+        // --- END FIX ---
     }
 
     /**

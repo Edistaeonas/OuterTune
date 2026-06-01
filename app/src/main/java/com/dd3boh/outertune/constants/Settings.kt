@@ -29,8 +29,32 @@ enum class LyricsPosition {
     LEFT, CENTER, RIGHT
 }
 
-const val DEFAULT_ENABLED_TABS = "HSFM"
-const val DEFAULT_ENABLED_FILTERS = "ARP"
+//const val DEFAULT_ENABLED_TABS = "HSFM"
+//const val DEFAULT_ENABLED_FILTERS = "ARP"
+// [Edgar]. I want all options by default. Tired of re-adding them at each install...
+//val screenPairs = listOf(
+//    Home to 'H',
+//    Songs to 'S',
+//    Folders to 'F',
+//    Artists to 'A',
+//    Albums to 'B',
+//    Playlists to 'L',
+//    Library to 'M'
+//)
+const val DEFAULT_ENABLED_TABS = "HSFMABL"
+/*
+Filters
+ */
+
+/**
+ * A: Albums
+ * R: Artists
+ * P: Playlists
+ * S: Songs
+ * F: Folders
+ * L: All
+ */
+const val DEFAULT_ENABLED_FILTERS = "ARPSF"
 
 /*
 ---------------------------
@@ -132,6 +156,11 @@ enum class ScannerM3uMatchCriteria {
     // TODO: Do albums for m3u if that even is a thing
 }
 
+enum class ArtistLinkingSensitivity {
+    SIMPLE,
+    COMPLEX
+}
+
 
 /*
 ---------------------------
@@ -189,7 +218,7 @@ enum class PlaylistSongSortType {
 }
 
 enum class ArtistSortType {
-    CREATE_DATE, NAME, SONG_COUNT
+    CREATE_DATE, NAME, SONG_COUNT, YT_LINK_STATUS
 }
 
 enum class ArtistSongSortType {

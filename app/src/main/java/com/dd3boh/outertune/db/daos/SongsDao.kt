@@ -52,7 +52,7 @@ interface SongsDao {
     @Transaction
     @Query("""
         SELECT * FROM song 
-        WHERE isLocal = 1 AND inLibrary IS NOT NULL AND localpath LIKE :dir || '%' AND title LIKE '%' || :query || '%'
+        WHERE isLocal = 1 AND inLibrary IS NOT NULL AND localpath LIKE :dir || '%s' AND title LIKE '%' || :query || '%'
         LIMIT :previewSize
         """)
     fun _searchSongsAllLocalInDir(dir: String, query: String, previewSize: Int = Int.MAX_VALUE): Flow<List<Song>>
@@ -84,6 +84,14 @@ interface SongsDao {
     @Query("SELECT * FROM song WHERE liked AND dateDownload IS NULL")
     fun likedSongsNotDownloaded(): Flow<List<Song>>
 
+    @Transaction
+    @Query("SELECT * FROM song ORDER BY RANDOM() LIMIT :limit")
+    fun getRandomSongs(limit: Int): List<Song>
+
+    @Transaction
+    @Query("SELECT * FROM song WHERE isLocal = 1 ORDER BY RANDOM() LIMIT :limit")
+    fun getRandomLocalSongs(limit: Int): List<Song>
+
     // region Songs Sort
     @Transaction
     @Query("SELECT * FROM song WHERE inLibrary IS NOT NULL ORDER BY rowId")
@@ -104,6 +112,14 @@ interface SongsDao {
     @Transaction
     @Query("SELECT * FROM song WHERE inLibrary IS NOT NULL ORDER BY title COLLATE NOCASE ASC")
     fun songsByNameAsc(): Flow<List<Song>>
+
+    @Query("""
+        SELECT s.* FROM song s
+            LEFT JOIN song_artist_map sam ON s.id = sam.songId
+            LEFT JOIN playlist_song_map psm ON s.id = psm.songId
+        WHERE sam.artistId IS NULL AND psm.playlistId IS NULL
+    """)
+    fun getOrphanedSongs(): List<SongEntity>
 
     @Transaction
     @Query("""
@@ -134,15 +150,20 @@ interface SongsDao {
     """)
     fun songsByPlayCountAsc(): Flow<List<Song>>
 
-    fun songs(sortType: SongSortType, descending: Boolean) =
-        when (sortType) {
+    fun songs(sortType: SongSortType, descending: Boolean): Flow<List<Song>> {
+        val effectiveDescending = when (sortType) {
+            SongSortType.CREATE_DATE, SongSortType.MODIFIED_DATE, SongSortType.RELEASE_DATE -> descending
+            else -> !descending
+        }
+        return when (sortType) {
             SongSortType.CREATE_DATE -> songsByCreateDateAsc()
             SongSortType.MODIFIED_DATE -> songsByDateModifiedAsc()
             SongSortType.RELEASE_DATE -> songsByReleaseDateAsc()
             SongSortType.NAME -> songsByNameAsc()
             SongSortType.ARTIST -> songsByArtistAsc()
             SongSortType.PLAY_COUNT -> songsByPlayCountAsc()
-        }.map { it.reversed(descending) }
+        }.map { it.reversed(effectiveDescending) }
+    }
 
     @Transaction
     @Query("SELECT * FROM song WHERE isLocal = 1 and inLibrary IS NOT NULL")
@@ -155,7 +176,7 @@ interface SongsDao {
     @Transaction
     @Query("""
         SELECT * FROM song
-        WHERE isLocal = 1 AND localpath LIKE :filter || '%'
+        WHERE isLocal = 1 AND localpath LIKE :filter || '%s'
     """)
     fun localDbSongsInDir(filter: String): Flow<List<Song>>
 
@@ -169,11 +190,11 @@ interface SongsDao {
     @Transaction
     @Query("""
         SELECT * FROM song
-        WHERE isLocal = 1 AND inLibrary IS NOT NULL AND localpath LIKE :filter || '%' 
+        WHERE isLocal = 1 AND inLibrary IS NOT NULL AND localpath LIKE :filter || '%s' 
         AND instr(substr(localpath, length(:filter) + 1), '/') = 0
         UNION
         SELECT * FROM song
-        WHERE isLocal = 1 AND inLibrary IS NOT NULL AND localpath LIKE :filter || '%'
+        WHERE isLocal = 1 AND inLibrary IS NOT NULL AND localpath LIKE :filter || '%s'
         GROUP BY rtrim(localPath, replace(localPath, '/', ''))
     """)
     fun _localSongsInDirShallow(filter: String): List<Song>
@@ -183,11 +204,11 @@ interface SongsDao {
     }
 
     @Transaction
-    @Query("SELECT * FROM song WHERE isLocal = 1 and inLibrary IS NOT NULL AND localpath LIKE :filter || '%'")
+    @Query("SELECT * FROM song WHERE isLocal = 1 and inLibrary IS NOT NULL AND localpath LIKE :filter || '%s'")
     fun _localSongsInDirDeep(filter: String): List<Song>
 
     @Transaction
-    @Query("SELECT count(*) FROM song WHERE isLocal = 1 and inLibrary IS NOT NULL AND localpath LIKE :path || '%'")
+    @Query("SELECT count(*) FROM song WHERE isLocal = 1 and inLibrary IS NOT NULL AND localpath LIKE :path || '%s'")
     fun localSongCountInPath(path: String): Flow<Int>
 
     @Query("""
@@ -201,6 +222,10 @@ interface SongsDao {
         ORDER BY localPath
     """)
     fun duplicatedLocalSongs(): List<SongEntity>
+
+    @Transaction
+    @Query("SELECT * FROM song WHERE id IN (:ids)")
+    suspend fun songsByIds(ids: List<String>): List<Song>
     // endregion
 
     // region Liked Songs Sort
@@ -252,15 +277,20 @@ interface SongsDao {
     """)
     fun likedSongsByPlayCountAsc(): Flow<List<Song>>
 
-    fun likedSongs(sortType: SongSortType, descending: Boolean) =
-        when (sortType) {
+    fun likedSongs(sortType: SongSortType, descending: Boolean): Flow<List<Song>> {
+        val effectiveDescending = when (sortType) {
+            SongSortType.CREATE_DATE, SongSortType.MODIFIED_DATE, SongSortType.RELEASE_DATE -> descending
+            else -> !descending
+        }
+        return when (sortType) {
             SongSortType.CREATE_DATE -> likedSongsByCreateDateAsc()
             SongSortType.MODIFIED_DATE -> likedSongsByDateModifiedAsc()
             SongSortType.RELEASE_DATE -> likedSongsByReleaseDateAsc()
             SongSortType.NAME -> likedSongsByNameAsc()
             SongSortType.ARTIST -> likedSongsByArtistAsc()
             SongSortType.PLAY_COUNT -> likedSongsByPlayCountAsc()
-        }.map { it.reversed(descending) }
+        }.map { it.reversed(effectiveDescending) }
+    }
     // endregion
 
     // region downloaded Songs utils
@@ -342,15 +372,20 @@ interface SongsDao {
     """)
     fun downloadSongsByPlayCountAsc(): Flow<List<Song>>
 
-    fun downloadSongs(sortType: SongSortType, descending: Boolean) =
-        when (sortType) {
+    fun downloadSongs(sortType: SongSortType, descending: Boolean): Flow<List<Song>> {
+        val effectiveDescending = when (sortType) {
+            SongSortType.CREATE_DATE, SongSortType.MODIFIED_DATE, SongSortType.RELEASE_DATE -> descending
+            else -> !descending
+        }
+        return when (sortType) {
             SongSortType.CREATE_DATE -> downloadSongsByCreateDateAsc()
             SongSortType.MODIFIED_DATE -> downloadSongsByDateModifiedAsc()
             SongSortType.RELEASE_DATE -> downloadSongsByReleaseDateAsc()
             SongSortType.NAME -> downloadSongsByNameAsc()
             SongSortType.ARTIST -> downloadSongsByArtistAsc()
             SongSortType.PLAY_COUNT -> downloadSongsByPlayCountAsc()
-        }.map { it.reversed(descending) }
+        }.map { it.reversed(effectiveDescending) }
+    }
     // endregion
     // endregion
 
@@ -415,7 +450,7 @@ interface SongsDao {
     /**
      * DON'T USE THIS DIRECTLY, USE updateLocalSongPath(...) instead!
      */
-    @Query("UPDATE song SET inLibrary = :inLibrary, localPath = :localPath, thumbnailUrl = :localPath WHERE id = :songId")
+    @Query("UPDATE song SET inLibrary = :inLibrary, localPath = :localPath WHERE id = :songId")
     fun _updateLSP(songId: String, inLibrary: LocalDateTime?, localPath: String)
     // endregion
 

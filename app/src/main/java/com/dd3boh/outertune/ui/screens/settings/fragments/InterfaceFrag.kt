@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.LocationOn
@@ -53,6 +54,7 @@ import com.dd3boh.outertune.constants.LanguageCodeToName
 import com.dd3boh.outertune.constants.ListItemHeight
 import com.dd3boh.outertune.constants.SYSTEM_DEFAULT
 import com.dd3boh.outertune.constants.SwipeToQueueKey
+import com.dd3boh.outertune.constants.SwipeToRemoveKey
 import com.dd3boh.outertune.constants.SwipeToSkipKey
 import com.dd3boh.outertune.constants.ThumbnailCornerRadius
 import com.dd3boh.outertune.extensions.move
@@ -116,12 +118,10 @@ fun ColumnScope.TabArrangementFrag() {
             clear()
 
             val enabled = Screens.getScreens(enabledTabs)
-            val temp = ArrayList<Pair<Screens, Boolean>>()
-            temp.addAll(enabled.map { it to true })
-            temp.addAll(
+            addAll(enabled.map { it to true })
+            addAll(
                 Screens.getAllScreens().filterNot { it in enabled }.map { it to false }
             )
-            addAll(temp.distinctBy { it.first })
         }
     }
 
@@ -394,7 +394,8 @@ fun ColumnScope.TabExtrasFrag() {
 @Composable
 fun ColumnScope.SwipeGesturesFrag() {
     val (swipeToSkip, onSwipeToSkipChange) = rememberPreference(SwipeToSkipKey, defaultValue = false)
-    val (swipe2Queue, onSwipe2QueueChange) = rememberPreference(SwipeToQueueKey, defaultValue = true)
+    val (swipe2Queue, onSwipe2QueueChange) = rememberPreference(SwipeToQueueKey, defaultValue = false)
+    val (swipeToRemove, onSwipeToRemoveChange) = rememberPreference(SwipeToRemoveKey, defaultValue = false)
 
     SwitchPreference(
         title = { Text(stringResource(R.string.swipe2Queue)) },
@@ -402,6 +403,13 @@ fun ColumnScope.SwipeGesturesFrag() {
         icon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) },
         checked = swipe2Queue,
         onCheckedChange = onSwipe2QueueChange
+    )
+    SwitchPreference(
+        title = { Text(stringResource(R.string.swipe_to_remove)) },
+        description = stringResource(R.string.swipe_to_remove_description),
+        icon = { Icon(Icons.Rounded.Delete, null) },
+        checked = swipeToRemove,
+        onCheckedChange = onSwipeToRemoveChange
     )
     SwitchPreference(
         title = { Text(stringResource(R.string.swipe_to_skip_title)) },

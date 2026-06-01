@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -125,11 +126,21 @@ fun Thumbnail(
             enter = fadeIn(),
             exit = fadeOut(),
         ) {
-            error?.let { error ->
-                ThumbnailPlaybackError(
-                    error = error,
-                    retry = playerConnection.player::prepare
-                )
+            // FIX: Rename the variable to 'e' to avoid shadowing conflicts and
+            // use '!!' to satisfy the non-nullable requirement of the sub-component.
+            error?.let { e ->
+                androidx.compose.material3.Surface(
+                    color = Color.Black, // Forced black background
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = PlayerHorizontalPadding)
+                        .clip(RoundedCornerShape(ThumbnailCornerRadius * 2))
+                ) {
+                    ThumbnailPlaybackError(
+                        error = e, // Now correctly identifies as non-nullable
+                        retry = playerConnection.player::prepare
+                    )
+                }
             }
         }
     }

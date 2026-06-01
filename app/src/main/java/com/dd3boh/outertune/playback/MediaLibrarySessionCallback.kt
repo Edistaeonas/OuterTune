@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.annotation.DrawableRes
+import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -54,6 +55,7 @@ class MediaLibrarySessionCallback @Inject constructor(
     lateinit var service: MusicService
     var toggleLike: () -> Unit = {}
     var toggleStartRadio: () -> Unit = {}
+    var startGlobalArtistRadio: () -> Unit = {}
     var toggleLibrary: () -> Unit = {}
 
     override fun onConnect(
@@ -66,6 +68,7 @@ class MediaLibrarySessionCallback @Inject constructor(
                 .add(MediaSessionConstants.CommandToggleLibrary)
                 .add(MediaSessionConstants.CommandToggleLike)
                 .add(MediaSessionConstants.CommandToggleStartRadio)
+                .add(MediaSessionConstants.CommandStartGlobalArtistRadio)
                 .add(MediaSessionConstants.CommandToggleShuffle)
                 .add(MediaSessionConstants.CommandToggleRepeatMode)
                 .add(SessionCommand(MusicService.COMMAND_GET_BINDER, Bundle.EMPTY))
@@ -83,6 +86,7 @@ class MediaLibrarySessionCallback @Inject constructor(
         when (customCommand.customAction) {
             MediaSessionConstants.ACTION_TOGGLE_LIKE -> toggleLike()
             MediaSessionConstants.ACTION_TOGGLE_START_RADIO -> toggleStartRadio()
+            MediaSessionConstants.ACTION_START_GLOBAL_ARTIST_RADIO -> startGlobalArtistRadio()
             MediaSessionConstants.ACTION_TOGGLE_LIBRARY -> toggleLibrary()
             MediaSessionConstants.ACTION_TOGGLE_SHUFFLE -> session.player.toggleShuffleMode()
             MediaSessionConstants.ACTION_TOGGLE_REPEAT_MODE -> session.player.toggleRepeatMode()
@@ -110,19 +114,19 @@ class MediaLibrarySessionCallback @Inject constructor(
         Log.i(TAG, "Resumption queue found. Loading queue: size = ${q.queue.size}, queue name = ${q.title}, " +
                 "queuePosShuffled = ${q.getQueuePosShuffled()}, lastSongPos = ${q.lastSongPos},")
 
-       if (isForPlayback) {
-           return@future MediaItemsWithStartPosition(
-               q.getCurrentQueueShuffled().map { it.toMediaItem() },
-               q.getQueuePosShuffled(),
-               q.lastSongPos
-           )
-       } else {
-           return@future MediaItemsWithStartPosition(
-               listOf(q.getCurrentSong()!!.toMediaItem()),
-               q.getQueuePosShuffled(),
-               q.lastSongPos
-           )
-       }
+        if (isForPlayback) {
+            return@future MediaItemsWithStartPosition(
+                q.getCurrentQueueShuffled().map { it.toMediaItem() },
+                q.getQueuePosShuffled(),
+                q.lastSongPos
+            )
+        } else {
+            return@future MediaItemsWithStartPosition(
+                listOf(q.getCurrentSong()!!.toMediaItem()),
+                q.getQueuePosShuffled(),
+                q.lastSongPos
+            )
+        }
     }
 
     override fun onGetLibraryRoot(
@@ -183,7 +187,35 @@ class MediaLibrarySessionCallback @Inject constructor(
                         null,
                         drawableUri(R.drawable.queue_music),
                         MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS
-                    )
+                    ),
+                    browsableMediaItem(
+                        MusicService.GLOBAL_RADIO,
+                        context.getString(R.string.global_radio_title),
+                        null,
+                        drawableUri(R.drawable.radio),
+                        MediaMetadata.MEDIA_TYPE_MUSIC
+                    ).buildUpon().setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setIsPlayable(true) // Makes it clickable to play
+                            .setIsBrowsable(false)
+                            .setTitle(context.getString(R.string.global_radio_title))
+                            .setArtworkUri(drawableUri(R.drawable.radio))
+                            .build()
+                    ).build(),
+                    browsableMediaItem(
+                        MusicService.YOUTUBE_RESET,
+                        context.getString(R.string.force_youtube_reset),
+                        null,
+                        drawableUri(R.drawable.replay),
+                        MediaMetadata.MEDIA_TYPE_MUSIC
+                    ).buildUpon().setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setIsPlayable(true)
+                            .setIsBrowsable(false)
+                            .setTitle(context.getString(R.string.force_youtube_reset))
+                            .setArtworkUri(drawableUri(R.drawable.replay))
+                            .build()
+                    ).build()
                 )
 
                 MusicService.SONG -> database.songsByCreateDateAsc().first().map { it.toMediaItem(parentId) }
@@ -363,11 +395,22 @@ class MediaLibrarySessionCallback @Inject constructor(
                 Triple(items, if (index > 0) index else 0, C.TIME_UNSET)
             }
 
+            MusicService.GLOBAL_RADIO -> {
+                service.startGlobalArtistRadio()
+                return@future defaultResult // Logic is handled by service.playQueue
+            }
+
+            MusicService.YOUTUBE_RESET -> {
+                // Perform reset without cookie wipe by default for AA safety
+                service.forceYoutubeReset(rotate = true, clearCookies = false, autoPlay = true)
+                return@future defaultResult
+            }
+
             else -> Triple(emptyList<MediaItem>(), startIndex, startPositionMs)
         }
 
         val queueTitle = context.getString(R.string.android_auto)
-        service.queueBoard.value.addQueue(
+        service.queueBoard.addQueue(
             queueTitle,
             queue.first.map { it.metadata },
             shuffled = false,

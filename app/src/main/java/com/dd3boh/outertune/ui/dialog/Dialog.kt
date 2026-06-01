@@ -111,7 +111,6 @@ fun DefaultDialog(
                 horizontalAlignment = horizontalAlignment,
                 modifier = modifier
                     .padding(8.dp)
-                    .verticalScroll(rememberScrollState())
             ) {
                 if (icon != null) {
                     CompositionLocalProvider(LocalContentColor provides AlertDialogDefaults.iconContentColor) {
@@ -258,6 +257,7 @@ fun TextFieldDialog(
                 }
             ),
             modifier = Modifier
+                .weight(weight = 1f, fill = false)
                 .focusRequester(focusRequester)
         )
 
@@ -279,7 +279,6 @@ fun TextFieldDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ActionPromptDialog(
-    modifier: Modifier = Modifier,
     title: String? = null,
     titleBar: @Composable (RowScope.() -> Unit)? = null,
     onDismiss: () -> Unit,
@@ -300,11 +299,7 @@ fun ActionPromptDialog(
                 .fillMaxWidth(0.8f)
                 .padding(16.dp)
         ) {
-            Column(
-                modifier = modifier
-                    .padding(12.dp)
-                    .weight(1f, false)
-            ) {
+            Column(modifier = Modifier.padding(12.dp)) {
                 // title
                 if (titleBar != null) {
                     Row {
@@ -384,7 +379,6 @@ fun CounterDialog(
                 )
                 .fillMaxWidth(0.8f)
                 .padding(16.dp)
-                .verticalScroll(rememberScrollState())
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
                 // title and description

@@ -2,9 +2,16 @@ package com.dd3boh.outertune.viewmodels
 
 import android.content.Context
 import android.content.Intent
+import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.lifecycle.ViewModel
 import com.dd3boh.outertune.MainActivity
 import com.dd3boh.outertune.R
@@ -24,7 +31,15 @@ import java.io.FileOutputStream
 import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 import javax.inject.Inject
+import kotlin.io.buffered
 import kotlin.system.exitProcess
+import com.dd3boh.outertune.constants.DownloadExtraPathKey
+import com.dd3boh.outertune.constants.DownloadPathKey
+import com.dd3boh.outertune.constants.ExcludedScanPathsKey
+import com.dd3boh.outertune.constants.ScanPathsKey
+import com.dd3boh.outertune.utils.dataStore
+import kotlinx.coroutines.flow.first
+import java.io.File
 
 @HiltViewModel
 class BackupRestoreViewModel @Inject constructor(
@@ -32,28 +47,103 @@ class BackupRestoreViewModel @Inject constructor(
     @ApplicationContext val context: Context,
     val database: MusicDatabase,
 ) : ViewModel() {
-    val TAG = BackupRestoreViewModel::class.simpleName.toString()
-    fun backup(uri: Uri) {
+    //val TAG = BackupRestoreViewModel::class.simpleName.toString()
+    val TAG = "Edgardebug"
+
+    fun backup(uri: Uri, includeLocalInfo: Boolean) {
         runCatching {
             context.applicationContext.contentResolver.openOutputStream(uri)?.use {
-                it.buffered().zipOutputStream().use { outputStream ->
-                    outputStream.setLevel(Deflater.BEST_COMPRESSION)
-                    (context.filesDir / "datastore" / SETTINGS_FILENAME).inputStream().buffered().use { inputStream ->
-                        outputStream.putNextEntry(ZipEntry(SETTINGS_FILENAME))
-                        inputStream.copyTo(outputStream)
+                it.buffered().zipOutputStream().use { outputStream ->                    outputStream.setLevel(Deflater.BEST_COMPRESSION)
+
+                    // 1. SETTINGS BACKUP
+                    if (includeLocalInfo) {
+                        (context.filesDir / "datastore" / SETTINGS_FILENAME).inputStream().buffered().use { inputStream ->
+                            outputStream.putNextEntry(ZipEntry(SETTINGS_FILENAME))
+                            inputStream.copyTo(outputStream)
+                        }
+                    } else {
+                        Log.i(TAG, "Excluding local file paths from settings.")
+                        val tempDsFile = File(context.cacheDir, "temp_backup_settings.preferences_pb")
+                        val tempDataStore = PreferenceDataStoreFactory.create(
+                            corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+                            produceFile = { tempDsFile }
+                        )
+
+                        val prefsMap = runBlocking { context.dataStore.data.first().asMap() }
+                        val keysToExclude = setOf(
+                            ScanPathsKey.name,
+                            ExcludedScanPathsKey.name,
+                            DownloadPathKey.name,
+                            DownloadExtraPathKey.name
+                        )
+
+                        runBlocking {
+                            tempDataStore.edit { tempSettings ->
+                                tempSettings.clear()
+                                prefsMap.filterKeys { it.name !in keysToExclude }.forEach { (key, value) ->
+                                    @Suppress("UNCHECKED_CAST")
+                                    tempSettings[key as Preferences.Key<Any>] = value
+                                }
+                            }
+                        }
+
+                        Log.i(TAG, "Checking temp file before copying. Exists: ${tempDsFile.exists()}, Size: ${tempDsFile.length()} bytes.")
+                        if (!tempDsFile.exists() || tempDsFile.length() == 0L) {
+                            Log.e(TAG, "CRITICAL: Temp file is missing or empty!")
+                            // This would cause a failure in the next step.
+                        }
+
+                        Log.i(TAG, "Attempting to copy temp file to backup zip...")
+
+                        tempDsFile.inputStream().buffered().use { inputStream ->
+                            outputStream.putNextEntry(ZipEntry(SETTINGS_FILENAME))
+                            inputStream.copyTo(outputStream)
+                        }
+                        tempDsFile.delete()
                     }
+
+                    // 2. DATABASE BACKUP
                     runBlocking(Dispatchers.IO) {
                         database.checkpoint()
                     }
-                    FileInputStream(database.openHelper.writableDatabase.path).use { inputStream ->
-                        outputStream.putNextEntry(ZipEntry(InternalDatabase.DB_NAME))
-                        inputStream.copyTo(outputStream)
+
+                    if (includeLocalInfo) {
+                        // Standard database backup
+                        FileInputStream(database.openHelper.writableDatabase.path).use { inputStream ->
+                            outputStream.putNextEntry(ZipEntry(InternalDatabase.DB_NAME))
+                            inputStream.copyTo(outputStream)
+                        }
+                    } else {
+                        // --- DEFINITIVE FIX: Filter local info from the database ---
+                        Log.i(TAG, "Excluding local file paths from database.")
+                        val tempDbFile = File(context.cacheDir, "temp_filtered_db.db")
+
+                        // Copy the live database to a temporary file
+                        FileInputStream(database.openHelper.writableDatabase.path).use { inputStream ->
+                            tempDbFile.outputStream().use { outputStream ->
+                                inputStream.copyTo(outputStream)
+                            }
+                        }
+
+                        // Open the temporary database and NULL out the local information
+                        SQLiteDatabase.openDatabase(tempDbFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
+                            db.execSQL("UPDATE song SET localPath = NULL, inLibrary = NULL WHERE isLocal = 1")
+                            // Optional: Also clean up empty local artists/albums if needed
+                        }
+
+                        // Copy the filtered temporary database into the backup zip
+                        tempDbFile.inputStream().use { inputStream ->
+                            outputStream.putNextEntry(ZipEntry(InternalDatabase.DB_NAME))
+                            inputStream.copyTo(outputStream)
+                        }
+                        tempDbFile.delete()
                     }
                 }
             }
         }.onSuccess {
             Toast.makeText(context, R.string.backup_create_success, Toast.LENGTH_SHORT).show()
         }.onFailure {
+            Log.e(TAG, "Backup failed!", it)
             reportException(it)
             Toast.makeText(context, R.string.backup_create_failed, Toast.LENGTH_SHORT).show()
         }

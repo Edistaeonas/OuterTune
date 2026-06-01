@@ -90,6 +90,7 @@ import com.dd3boh.outertune.constants.SwipeToQueueKey
 import com.dd3boh.outertune.constants.ThumbnailCornerRadius
 import com.dd3boh.outertune.constants.TopBarInsets
 import com.dd3boh.outertune.db.entities.Album
+import com.dd3boh.outertune.db.entities.PlaylistEntity
 import com.dd3boh.outertune.models.toMediaMetadata
 import com.dd3boh.outertune.playback.ExoDownloadService
 import com.dd3boh.outertune.playback.queues.ListQueue
@@ -328,9 +329,19 @@ fun AlbumScreen(
                                         else -> {
                                             IconButton(
                                                 onClick = {
-                                                    val songs =
-                                                        albumWithSongsLocal.songs.map { it.toMediaMetadata() }
-                                                    downloadUtil.download(songs)
+//                                                    val songs =
+//                                                        albumWithSongsLocal.songs.map { it.toMediaMetadata() }
+//                                                    downloadUtil.download(songs)
+                                                    val _songs = albumWithSongsLocal.songs.map { it.toMediaMetadata() } // or appropriate mapping
+                                                    val playlistEntity =
+                                                        PlaylistEntity(
+                                                            id = albumWithSongsLocal.album.id, // for AlbumScreen/AlbumMenu use appropriate album id variable
+                                                            name = albumWithSongsLocal.album.title,
+                                                            browseId = albumWithSongsLocal.album.id,
+                                                            thumbnailUrl = albumWithSongsLocal.album.thumbnailUrl,
+                                                            isLocal = true
+                                                        )
+                                                    downloadUtil.downloadCollection(_songs, playlistEntity)
                                                 }
                                             ) {
                                                 Icon(

@@ -112,7 +112,6 @@ import com.dd3boh.outertune.constants.LibraryFilterKey
 import com.dd3boh.outertune.constants.LocalLibraryEnableKey
 import com.dd3boh.outertune.constants.LyricTrimKey
 import com.dd3boh.outertune.constants.MaxSongCacheSizeKey
-import com.dd3boh.outertune.constants.NavigationBarHeight
 import com.dd3boh.outertune.constants.OOBE_VERSION
 import com.dd3boh.outertune.constants.OobeStatusKey
 import com.dd3boh.outertune.constants.ScanPathsKey
@@ -700,9 +699,7 @@ fun SetupWizard(
                                     // download path cannot a scan path, or a subdir of a scan path
                                     tempFilePath.toString().length <= it.toString().length && tempFilePath.toString()
                                         .contains(it.toString())
-                                },
-                                modifier = Modifier
-                                    .verticalScroll(rememberScrollState()),
+                                }
                             ) {
 
                                 val dirPickerLauncher = rememberLauncherForActivityResult(
@@ -805,6 +802,13 @@ fun SetupWizard(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
                             )
+                            Text(
+                                text = stringResource(R.string.oobe_wait_for_sync),
+                                style = MaterialTheme.typography.bodyLarge,
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                            )
                             Row(
                                 horizontalArrangement = Arrangement.Center,
                                 modifier = Modifier.padding(vertical = 16.dp)
@@ -832,7 +836,6 @@ fun SetupWizard(
                         }
                     }
                 }
-                Spacer(Modifier.height(NavigationBarHeight))
             }
 
             if (oobeStatus == 0 || oobeStatus == OOBE_VERSION - 1) {

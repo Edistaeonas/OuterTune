@@ -11,6 +11,7 @@ package com.dd3boh.outertune
 
 import android.annotation.SuppressLint
 import android.app.NotificationManager
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -29,14 +30,15 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.add
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,7 +46,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
@@ -59,8 +60,11 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.material3.contentColorFor
@@ -77,6 +81,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -107,6 +112,10 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.window.core.layout.WindowWidthSizeClass
+import coil3.imageLoader
+import coil3.request.ImageRequest
+import coil3.request.allowHardware
+import coil3.toBitmap
 import com.dd3boh.outertune.constants.AppBarHeight
 import com.dd3boh.outertune.constants.DEFAULT_ENABLED_TABS
 import com.dd3boh.outertune.constants.DarkMode
@@ -115,6 +124,7 @@ import com.dd3boh.outertune.constants.DefaultOpenTabKey
 import com.dd3boh.outertune.constants.DynamicThemeKey
 import com.dd3boh.outertune.constants.EnabledTabsKey
 import com.dd3boh.outertune.constants.HighContrastKey
+import com.dd3boh.outertune.constants.InnerTubeCookieKey
 import com.dd3boh.outertune.constants.LibraryFilterKey
 import com.dd3boh.outertune.constants.MinMiniPlayerHeight
 import com.dd3boh.outertune.constants.MiniPlayerHeight
@@ -123,9 +133,10 @@ import com.dd3boh.outertune.constants.NavigationBarHeight
 import com.dd3boh.outertune.constants.OOBE_VERSION
 import com.dd3boh.outertune.constants.OobeStatusKey
 import com.dd3boh.outertune.constants.PureBlackKey
+import com.dd3boh.outertune.constants.SHOW_DEBUG_OVERLAY
 import com.dd3boh.outertune.constants.SlimNavBarKey
+import com.dd3boh.outertune.constants.VrVerKey
 import com.dd3boh.outertune.db.MusicDatabase
-import com.dd3boh.outertune.extensions.tabMode
 import com.dd3boh.outertune.playback.DownloadUtil
 import com.dd3boh.outertune.playback.MediaControllerViewModel
 import com.dd3boh.outertune.playback.MusicService
@@ -142,7 +153,6 @@ import com.dd3boh.outertune.ui.screens.HistoryScreen
 import com.dd3boh.outertune.ui.screens.HomeScreen
 import com.dd3boh.outertune.ui.screens.LoginScreen
 import com.dd3boh.outertune.ui.screens.MoodAndGenresScreen
-import com.dd3boh.outertune.ui.screens.PlayerScreen
 import com.dd3boh.outertune.ui.screens.Screens
 import com.dd3boh.outertune.ui.screens.SetupWizard
 import com.dd3boh.outertune.ui.screens.StatsScreen
@@ -177,18 +187,37 @@ import com.dd3boh.outertune.ui.screens.settings.LyricsSettings
 import com.dd3boh.outertune.ui.screens.settings.PlayerSettings
 import com.dd3boh.outertune.ui.screens.settings.SettingsScreen
 import com.dd3boh.outertune.ui.screens.settings.StorageSettings
+import com.dd3boh.outertune.ui.theme.ColorSaver
+import com.dd3boh.outertune.ui.theme.DefaultThemeColor
 import com.dd3boh.outertune.ui.theme.OuterTuneTheme
+import com.dd3boh.outertune.ui.theme.extractThemeColor
 import com.dd3boh.outertune.ui.utils.appBarScrollBehavior
 import com.dd3boh.outertune.utils.ActivityLauncherHelper
+import com.dd3boh.outertune.utils.LocalArtworkPath
 import com.dd3boh.outertune.utils.NetworkConnectivityObserver
 import com.dd3boh.outertune.utils.SyncUtils
+import com.dd3boh.outertune.utils.coilCoroutine
 import com.dd3boh.outertune.utils.lmScannerCoroutine
 import com.dd3boh.outertune.utils.rememberEnumPreference
 import com.dd3boh.outertune.utils.rememberPreference
 import com.valentinilk.shimmer.LocalShimmerTheme
 import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import java.time.LocalDateTime
+import java.lang.IndexOutOfBoundsException
+import java.lang.RuntimeException
 import javax.inject.Inject
+import com.zionhuang.innertube.models.YouTubeClient
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -242,146 +271,245 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        lifecycle.addObserver(controllerViewModel)
-        controllerViewModel.addControllerCallback(lifecycle) { controller, _ ->
-            playerConnection = PlayerConnection(controllerViewModel, database)
-        }
-        WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        activityLauncher = ActivityLauncherHelper(this)
-
-        setContent {
-            Log.v(MAIN_TAG, "RC-1")
-            val coroutineScope = rememberCoroutineScope()
-            val haptic = LocalHapticFeedback.current
-            val snackbarHostState = remember { SnackbarHostState() }
-
-            val enableDynamicTheme by rememberPreference(DynamicThemeKey, defaultValue = true)
-            val darkTheme by rememberEnumPreference(DarkModeKey, defaultValue = DarkMode.AUTO)
-            val highContrastCompat by rememberPreference(HighContrastKey, defaultValue = false)
-            val pureBlack by rememberPreference(PureBlackKey, defaultValue = false)
-            val isSystemInDarkTheme = isSystemInDarkTheme()
-            val useDarkTheme = remember(darkTheme, isSystemInDarkTheme) {
-                if (darkTheme == DarkMode.AUTO) isSystemInDarkTheme else darkTheme == DarkMode.ON
+        try {
+            lifecycle.addObserver(controllerViewModel)
+            controllerViewModel.addControllerCallback(lifecycle) { controller, _ ->
+                playerConnection = PlayerConnection(controllerViewModel, database)
             }
+            WindowCompat.setDecorFitsSystemWindows(window, false)
 
-            val windowSizeClass = currentWindowAdaptiveInfo().windowSizeClass
-            val tabMode = this@MainActivity.tabMode()
-            val useNavRail by remember {
-                derivedStateOf {
-                    windowSizeClass.windowWidthSizeClass == WindowWidthSizeClass.EXPANDED && !tabMode
+            activityLauncher = ActivityLauncherHelper(this)
+
+            setContent {
+                Log.v(MAIN_TAG, "RC-1")
+                val coroutineScope = rememberCoroutineScope()
+                val haptic = LocalHapticFeedback.current
+                val snackbarHostState = remember { SnackbarHostState() }
+
+                val enableDynamicTheme by rememberPreference(DynamicThemeKey, defaultValue = false)
+                val darkTheme by rememberEnumPreference(DarkModeKey, defaultValue = DarkMode.ON)
+                val highContrastCompat by rememberPreference(HighContrastKey, defaultValue = false)
+                val pureBlack by rememberPreference(PureBlackKey, defaultValue = true)
+                val isSystemInDarkTheme = isSystemInDarkTheme()
+                val useDarkTheme = remember(darkTheme, isSystemInDarkTheme) {
+                    if (darkTheme == DarkMode.AUTO) isSystemInDarkTheme else darkTheme == DarkMode.ON
                 }
-            }
+
+                val windowSizeClass = currentWindowAdaptiveInfo().windowSizeClass
+                //            val tabMode = this@MainActivity.tabMode()
+                val useNavRail by remember {
+                    derivedStateOf {
+                        windowSizeClass.windowWidthSizeClass == WindowWidthSizeClass.EXPANDED
+                    }
+                }
 
 
-            val (oobeStatus) = rememberPreference(OobeStatusKey, defaultValue = 0)
+                val (oobeStatus) = rememberPreference(OobeStatusKey, defaultValue = 0)
 
-            var filter by rememberEnumPreference(LibraryFilterKey, Screens.LibraryFilter.ALL)
-            val (slimNav) = rememberPreference(SlimNavBarKey, defaultValue = false)
-            val (enabledTabs) = rememberPreference(EnabledTabsKey, defaultValue = DEFAULT_ENABLED_TABS)
-            val navigationItems = remember {
-                Screens.getScreens(enabledTabs)
-            }
-            val (defaultOpenTab, onDefaultOpenTabChange) = rememberPreference(
-                DefaultOpenTabKey,
-                defaultValue = Screens.Home.route
-            )
+                var filter by rememberEnumPreference(LibraryFilterKey, Screens.LibraryFilter.ALL)
+                val (slimNav) = rememberPreference(SlimNavBarKey, defaultValue = false)
+                val (enabledTabs) = rememberPreference(
+                    EnabledTabsKey,
+                    defaultValue = DEFAULT_ENABLED_TABS
+                )
+                val navigationItems = Screens.getScreens(enabledTabs)
+                val (defaultOpenTab, onDefaultOpenTabChange) = rememberPreference(
+                    DefaultOpenTabKey,
+                    defaultValue = Screens.Home.route
+                )
+
+                // --- GLOBAL YOUTUBE LOGIN MONITOR ---
+                // This detects login everywhere (Wizard, Settings, etc.)
+                val (cookie) = rememberPreference(InnerTubeCookieKey, defaultValue = "")
+                val (vrVer, onVrVerChange) = rememberPreference(VrVerKey, defaultValue = YouTubeClient.VR_CLIENT_FALLBACK_VERSION)
+                var showLoginRestartDialog by remember { mutableStateOf(false) }
+                // Track the previous state to only trigger on TRANSITION
+                var lastCookieState by remember { mutableStateOf(cookie) }
+
+                LaunchedEffect(cookie) {
+                    // TRIGGER ONLY IF:
+                    // 1. Cookie just changed from empty to not-empty (A new login)
+                    // 2. We are currently on the fallback version
+                    if (cookie.isNotEmpty() && lastCookieState.isEmpty() &&
+                        vrVer == YouTubeClient.VR_CLIENT_FALLBACK_VERSION) {
+
+                        if (oobeStatus < 3) {
+                            // CASE: WIZARD LOGIN (Pure)
+                            // User hasn't finished setup, so likely hasn't played music.
+                            // Just upgrade the version string silently.
+                            Log.i(MAIN_TAG, "LOGIN_TRIGGER: Wizard login. Silently upgrading to Latest version.")
+                            onVrVerChange(YouTubeClient.VR_CLIENT_LATEST_VERSION)
+                            YouTubeClient.currentVrVersion = YouTubeClient.VR_CLIENT_LATEST_VERSION
+                        } else {
+                            // CASE: SETTINGS LOGIN (Spoiled)
+                            // User is already using the app. We MUST perform the full Reset (Socket Wipe + Restart).
+                            // Standard case: Show dialog first!
+                            // This delay allows the account sync to finish.
+                            Log.w(MAIN_TAG, "LOGIN_TRIGGER: Standard login. Sockets may be spoiled. Triggering Reset.")
+                            showLoginRestartDialog = true
+                        }
+                    }
+                    lastCookieState = cookie
+                }
 
 
-
-
-            LaunchedEffect(Unit) {
-                // local media & download folders auto scan
-                coroutineScope.launch(lmScannerCoroutine) {
-                    scanInit(
-                        this@MainActivity, database, downloadUtil, coroutineScope, playerConnection,
-                        snackbarHostState
+                if (showLoginRestartDialog) {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { }, // Force user to click OK
+                        title = { Text(stringResource(R.string.login_success_title)) },
+                        text = { Text(stringResource(R.string.restart_required_login_desc)) },
+                        confirmButton = {
+                            androidx.compose.material3.TextButton(onClick = {
+                                showLoginRestartDialog = false
+                                // Force the .15 version and DO NOT clear cookies
+                                MusicService.instance?.forceYoutubeReset(
+                                    rotate = false,
+                                    targetVersion = YouTubeClient.VR_CLIENT_LATEST_VERSION,
+                                    clearCookies = false, // Preserve login
+                                    autoPlay = false // User action: DO NOT autoplay on restart
+                                )
+                            }) { Text(stringResource(android.R.string.ok)) }
+                        }
                     )
                 }
-            }
 
-
-            LaunchedEffect(useDarkTheme) {
-                setSystemBarAppearance(useDarkTheme)
-            }
-            try {
-                connectivityObserver.unregister()
-            } catch (e: UninitializedPropertyAccessException) {
-                // lol
-            }
-            connectivityObserver = NetworkConnectivityObserver(this@MainActivity)
-            val isNetworkConnected by connectivityObserver.networkStatus.collectAsState(true)
-
-
-            OuterTuneTheme(
-                context = this@MainActivity,
-                playerConnection = playerConnection,
-                enableDynamicTheme = enableDynamicTheme,
-                isSystemInDarkTheme = isSystemInDarkTheme,
-                darkTheme = useDarkTheme,
-                pureBlack = pureBlack,
-                highContrastCompat = highContrastCompat,
-            ) {
-                Log.v(MAIN_TAG, "RC-2.1")
-                val density = LocalDensity.current
-                val windowsInsets = WindowInsets.systemBars
-                val bottomInset = with(density) { windowsInsets.getBottom(density).toDp() }
-                val cutoutInsets = WindowInsets.displayCutout
-
-                val navController = rememberNavController()
-                val navBackStackEntry by navController.currentBackStackEntryAsState()
-
-                val tabOpenedFromShortcut = remember {
-                    // reroute to library page for new layout is handled in NavHost section
-                    when (intent?.action) {
-                        ACTION_SONGS -> if (navigationItems.contains(Screens.Songs)) Screens.Songs else Screens.Library
-                        ACTION_ALBUMS -> if (navigationItems.contains(Screens.Albums)) Screens.Albums else Screens.Library
-                        ACTION_PLAYLISTS -> if (navigationItems.contains(Screens.Playlists)) Screens.Playlists else Screens.Library
-                        else -> null
-                    }
-                }
-                // setup filters for new layout
-                if (tabOpenedFromShortcut != null && navigationItems.contains(Screens.Library)) {
-                    filter = when (intent?.action) {
-                        ACTION_SONGS -> Screens.LibraryFilter.SONGS
-                        ACTION_ALBUMS -> Screens.LibraryFilter.ALBUMS
-                        ACTION_PLAYLISTS -> Screens.LibraryFilter.PLAYLISTS
-                        ACTION_SEARCH -> {
-                            navController.navigate("search")
-                            filter
-                        } // do change filter for search
-                        else -> Screens.LibraryFilter.ALL
+                LaunchedEffect(Unit) {
+                    // local media & download folders auto scan
+                    coroutineScope.launch(lmScannerCoroutine) {
+                        scanInit(
+                            this@MainActivity, database, downloadUtil, coroutineScope, playerConnection,
+                            snackbarHostState
+                        )
                     }
                 }
 
-                BoxWithConstraints(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surface)
+
+                LaunchedEffect(useDarkTheme) {
+                    setSystemBarAppearance(useDarkTheme)
+                }
+                var themeColor by rememberSaveable(stateSaver = ColorSaver) {
+                    mutableStateOf(DefaultThemeColor)
+                }
+
+                try {
+                    connectivityObserver.unregister()
+                } catch (e: UninitializedPropertyAccessException) {
+                    // lol
+                }
+                connectivityObserver = NetworkConnectivityObserver(this@MainActivity)
+                val isNetworkConnected by connectivityObserver.networkStatus.collectAsState(true)
+
+                LaunchedEffect(playerConnection, enableDynamicTheme, isSystemInDarkTheme) {
+                    val playerConnection = playerConnection
+                    if (!enableDynamicTheme || playerConnection == null) {
+                        themeColor = DefaultThemeColor
+                        return@LaunchedEffect
+                    }
+                    playerConnection.service.currentMediaMetadata.collectLatest { song ->
+                        coroutineScope.launch(coilCoroutine) {
+                            var ret = DefaultThemeColor
+                            if (song != null) {
+                                val uri =
+                                    (if (song.isLocal) song.localPath else song.thumbnailUrl)?.toUri()
+                                if (uri != null) {
+                                    val model = if (uri.toString().startsWith("/storage/")) {
+                                        LocalArtworkPath(uri.toString(), 100, 100)
+                                    } else {
+                                        uri
+                                    }
+
+                                    val result = applicationContext.imageLoader.execute(
+                                        ImageRequest.Builder(applicationContext)
+                                            .data(model)
+                                            .allowHardware(false)
+                                            .build()
+                                    )
+
+                                    ret = result.image?.toBitmap()?.extractThemeColor()
+                                        ?: DefaultThemeColor
+                                }
+                            }
+                            themeColor = ret
+                        }
+                    }
+                }
+
+
+                OuterTuneTheme(
+                    darkTheme = useDarkTheme,
+                    pureBlack = pureBlack,
+                    highContrastCompat = highContrastCompat,
+                    themeColor = themeColor
                 ) {
-                    val maxW = maxWidth
-                    Log.v(MAIN_TAG, "RC-2.2")
+                    Log.v(MAIN_TAG, "RC-2.1")
+                    val density = LocalDensity.current
+                    val windowsInsets = WindowInsets.systemBars
+                    val bottomInset = with(density) { windowsInsets.getBottom(density).toDp() }
+                    val cutoutInsets = WindowInsets.displayCutout
 
-                    fun getNavPadding(): Dp {
-                        return if (!useNavRail) (if (slimNav) 52.dp else 68.dp) else MinMiniPlayerHeight
+                    val navController = rememberNavController()
+                    val navBackStackEntry by navController.currentBackStackEntryAsState()
+
+                    val tabOpenedFromShortcut = remember {
+                        // reroute to library page for new layout is handled in NavHost section
+                        when (intent?.action) {
+                            ACTION_SONGS -> if (navigationItems.contains(Screens.Songs)) Screens.Songs else Screens.Library
+                            ACTION_ALBUMS -> if (navigationItems.contains(Screens.Albums)) Screens.Albums else Screens.Library
+                            ACTION_PLAYLISTS -> if (navigationItems.contains(Screens.Playlists)) Screens.Playlists else Screens.Library
+                            else -> null
+                        }
+                    }
+                    // setup filters for new layout
+                    if (tabOpenedFromShortcut != null && navigationItems.contains(Screens.Library)) {
+                        filter = when (intent?.action) {
+                            ACTION_SONGS -> Screens.LibraryFilter.SONGS
+                            ACTION_ALBUMS -> Screens.LibraryFilter.ALBUMS
+                            ACTION_PLAYLISTS -> Screens.LibraryFilter.PLAYLISTS
+                            ACTION_SEARCH -> {
+                                navController.navigate("search")
+                                filter
+                            } // do change filter for search
+                            else -> Screens.LibraryFilter.ALL
+                        }
                     }
 
-                    val playerBottomSheetState = rememberBottomSheetState(
-                        dismissedBound = 0.dp,
-                        collapsedBound = bottomInset + MiniPlayerHeight + getNavPadding(),
-                        expandedBound = maxHeight,
-                    )
+                    BoxWithConstraints(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.surface)
+                    ) {
+                        Log.v(MAIN_TAG, "RC-2.2")
 
-                    val playerAwareWindowInsets =
-                        remember(
-                            bottomInset,
-                            playerBottomSheetState.isDismissed,
-                        ) {
-                            // TODO: Navbar is shown in all screens except for oobe (which doesn't use these insets). Idk what do to tbh
-                            var bottom = bottomInset + if (!useNavRail) NavigationBarHeight else 0.dp
+                        fun getNavPadding(): Dp {
+                            return if (!useNavRail) (if (slimNav) 52.dp else 68.dp) else MinMiniPlayerHeight
+                        }
 
-                            if (!playerBottomSheetState.isDismissed) bottom += MiniPlayerHeight
-                            if (!tabMode) {
+                        val playerBottomSheetState = rememberBottomSheetState(
+                            dismissedBound = 0.dp,
+                            collapsedBound = bottomInset + MiniPlayerHeight + getNavPadding(),
+                            expandedBound = maxHeight,
+                        )
+
+                        LaunchedEffect(Unit) {
+                            if (intent.getBooleanExtra("expandPlayer", false)) {
+                                // A 1.5s delay ensures that the MusicService has initialized the queue
+                                // and the player is no longer in a 'dismissed' state, allowing expansion.
+                                delay(1500)
+                                playerBottomSheetState.expand()
+                            }
+                        }
+
+                        val playerAwareWindowInsets =
+                            remember(
+                                bottomInset,
+                                playerBottomSheetState.isDismissed,
+                            ) {
+                                // TODO: Navbar is shown in all screens except for oobe (which doesn't use these insets). Idk what do to tbh
+                                var bottom =
+                                    bottomInset + if (!useNavRail) NavigationBarHeight else 0.dp
+
+                                if (!playerBottomSheetState.isDismissed) bottom += MiniPlayerHeight
                                 windowsInsets
                                     .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)
                                     .add(cutoutInsets.only(WindowInsetsSides.Horizontal))
@@ -392,554 +520,550 @@ class MainActivity : ComponentActivity() {
                                             bottom = bottom
                                         )
                                     )
-                            } else {
-                                windowsInsets
-                                    .only(WindowInsetsSides.Top)
-                                    .add(WindowInsets(top = AppBarHeight, bottom = bottom))
                             }
+
+                        val scrollBehavior = appBarScrollBehavior(
+                            canScroll = {
+                                navBackStackEntry?.destination?.route?.startsWith("search/") == false &&
+                                        (playerBottomSheetState.isCollapsed || playerBottomSheetState.isDismissed)
+                            }
+                        )
+
+
+                        DisposableEffect(Unit) {
+                            val listener = Consumer<Intent> { intent ->
+                                val uri =
+                                    intent.data ?: intent.extras?.getString(Intent.EXTRA_TEXT)?.toUri()
+                                    ?: return@Consumer
+                                youtubeNavigator(
+                                    this@MainActivity,
+                                    navController,
+                                    coroutineScope,
+                                    playerConnection,
+                                    snackbarHostState,
+                                    uri
+                                )
+                            }
+
+                            addOnNewIntentListener(listener)
+                            onDispose { removeOnNewIntentListener(listener) }
                         }
 
-                    val scrollBehavior = appBarScrollBehavior(
-                        canScroll = {
-                            navBackStackEntry?.destination?.route?.startsWith("search/") == false &&
-                                    (playerBottomSheetState.isCollapsed || playerBottomSheetState.isDismissed)
-                        }
-                    )
-
-
-                    DisposableEffect(Unit) {
-                        val listener = Consumer<Intent> { intent ->
-                            val uri =
-                                intent.data ?: intent.extras?.getString(Intent.EXTRA_TEXT)?.toUri()
-                                ?: return@Consumer
-                            youtubeNavigator(
-                                this@MainActivity,
-                                navController,
-                                coroutineScope,
-                                playerConnection,
-                                snackbarHostState,
-                                uri
-                            )
-                        }
-
-                        addOnNewIntentListener(listener)
-                        onDispose { removeOnNewIntentListener(listener) }
-                    }
-
-                    CompositionLocalProvider(
-                        LocalDatabase provides database,
-                        LocalContentColor provides contentColorFor(MaterialTheme.colorScheme.surface),
-                        LocalMenuState provides MenuState(rememberModalBottomSheetState()),
-                        LocalPlayerConnection provides playerConnection,
-                        LocalPlayerAwareWindowInsets provides playerAwareWindowInsets,
-                        LocalDownloadUtil provides downloadUtil,
-                        LocalShimmerTheme provides ShimmerTheme,
-                        LocalSyncUtils provides syncUtils,
-                        LocalNetworkConnected provides isNetworkConnected,
-                        LocalSnackbarHostState provides snackbarHostState,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
+                        CompositionLocalProvider(
+                            LocalDatabase provides database,
+                            LocalContentColor provides contentColorFor(MaterialTheme.colorScheme.surface),
+                            LocalMenuState provides MenuState(rememberModalBottomSheetState()),
+                            LocalPlayerConnection provides playerConnection,
+                            LocalPlayerAwareWindowInsets provides playerAwareWindowInsets,
+                            LocalDownloadUtil provides downloadUtil,
+                            LocalShimmerTheme provides ShimmerTheme,
+                            LocalSyncUtils provides syncUtils,
+                            LocalNetworkConnected provides isNetworkConnected,
+                            LocalSnackbarHostState provides snackbarHostState,
                         ) {
-                            Log.v(MAIN_TAG, "RC-3")
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                            ) {
+                                Log.v(MAIN_TAG, "RC-3")
 
 
-                            val navHost: @Composable() (() -> Unit) = @Composable {
-                                NavHost(
-                                    navController = navController,
-                                    startDestination = (Screens.getAllScreens()
-                                        .find { it.route == defaultOpenTab })?.route
-                                        ?: Screens.Home.route,
-                                    enterTransition = {
-                                        val currentRouteIndex = navigationItems.indexOfFirst {
-                                            it.route == targetState.destination.route
-                                        }
-                                        val previousRouteIndex = navigationItems.indexOfFirst {
-                                            it.route == initialState.destination.route
-                                        }
+                                val navHost: @Composable() (() -> Unit) = @Composable {
+                                    NavHost(
+                                        navController = navController,
+                                        startDestination = (Screens.getAllScreens()
+                                            .find { it.route == defaultOpenTab })?.route
+                                            ?: Screens.Home.route,
+                                        enterTransition = {
+                                            val currentRouteIndex = navigationItems.indexOfFirst {
+                                                it.route == targetState.destination.route
+                                            }
+                                            val previousRouteIndex = navigationItems.indexOfFirst {
+                                                it.route == initialState.destination.route
+                                            }
 
-                                        if (currentRouteIndex == -1 || currentRouteIndex > previousRouteIndex)
-                                            slideInHorizontally { it / 8 } + fadeIn(tween(200))
-                                        else
-                                            slideInHorizontally { -it / 8 } + fadeIn(tween(200))
-                                    },
-                                    exitTransition = {
-                                        val currentRouteIndex = navigationItems.indexOfFirst {
-                                            it.route == initialState.destination.route
-                                        }
-                                        val targetRouteIndex = navigationItems.indexOfFirst {
-                                            it.route == targetState.destination.route
-                                        }
-
-                                        if (targetRouteIndex == -1 || targetRouteIndex > currentRouteIndex)
-                                            slideOutHorizontally { -it / 8 } + fadeOut(tween(100))
-                                        else
-                                            slideOutHorizontally { it / 8 } + fadeOut(tween(100))
-                                    },
-                                    popEnterTransition = {
-                                        val currentRouteIndex = navigationItems.indexOfFirst {
-                                            it.route == targetState.destination.route
-                                        }
-                                        val previousRouteIndex = navigationItems.indexOfFirst {
-                                            it.route == initialState.destination.route
-                                        }
-
-                                        if (previousRouteIndex != -1 && previousRouteIndex < currentRouteIndex)
-                                            slideInHorizontally { it / 8 } + fadeIn(tween(200))
-                                        else
-                                            slideInHorizontally { -it / 8 } + fadeIn(tween(200))
-                                    },
-                                    popExitTransition = {
-                                        val currentRouteIndex = navigationItems.indexOfFirst {
-                                            it.route == initialState.destination.route
-                                        }
-                                        val targetRouteIndex = navigationItems.indexOfFirst {
-                                            it.route == targetState.destination.route
-                                        }
-
-                                        if (currentRouteIndex != -1 && currentRouteIndex < targetRouteIndex)
-                                            slideOutHorizontally { -it / 8 } + fadeOut(tween(100))
-                                        else
-                                            slideOutHorizontally { it / 8 } + fadeOut(tween(100))
-                                    },
-                                    modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
-                                )
-                                {
-                                    composable(Screens.Home.route) {
-                                        HomeScreen(navController)
-                                    }
-                                    composable(Screens.Songs.route) {
-                                        LibrarySongsScreen(navController)
-                                    }
-                                    composable(Screens.Folders.route) {
-                                        LibraryFoldersScreen(navController, scrollBehavior)
-                                    }
-                                    composable(
-                                        route = "${Screens.Folders.route}/{path}",
-                                        arguments = listOf(
-                                            navArgument("path") {
-                                                type = NavType.StringType
-                                            }
-                                        )
-                                    ) {
-                                        FolderScreen(navController, scrollBehavior)
-                                    }
-                                    composable(Screens.Artists.route) {
-                                        LibraryArtistsScreen(navController)
-                                    }
-                                    composable(Screens.Albums.route) {
-                                        LibraryAlbumsScreen(navController)
-                                    }
-                                    composable(Screens.Playlists.route) {
-                                        LibraryPlaylistsScreen(navController)
-                                    }
-                                    composable(Screens.Library.route) {
-                                        LibraryScreen(navController, scrollBehavior)
-                                    }
-                                    composable(Screens.Player.route) {
-                                        PlayerScreen(navController, bottomPadding = getNavPadding())
-                                    }
-                                    composable("history") {
-                                        HistoryScreen(navController)
-                                    }
-                                    composable("stats") {
-                                        StatsScreen(navController)
-                                    }
-                                    composable("mood_and_genres") {
-                                        MoodAndGenresScreen(navController, scrollBehavior)
-                                    }
-                                    composable("account") {
-                                        AccountScreen(navController, scrollBehavior)
-                                    }
-
-                                    composable(
-                                        route = "browse/{browseId}",
-                                        arguments = listOf(
-                                            navArgument("browseId") {
-                                                type = NavType.StringType
-                                            }
-                                        )
-                                    ) {
-                                        BrowseScreen(
-                                            navController,
-                                            scrollBehavior,
-                                            it.arguments?.getString("browseId")
-                                        )
-                                    }
-                                    composable(
-                                        route = "search",
-                                    ) {
-                                        SearchBarContainer(navController, scrollBehavior)
-                                    }
-                                    composable(
-                                        route = "search/{query}",
-                                        arguments = listOf(
-                                            navArgument("query") {
-                                                type = NavType.StringType
-                                            }
-                                        )
-                                    ) {
-                                        OnlineSearchResult(navController)
-                                    }
-                                    composable(
-                                        route = "album/{albumId}",
-                                        arguments = listOf(
-                                            navArgument("albumId") {
-                                                type = NavType.StringType
-                                            },
-                                        )
-                                    ) {
-                                        AlbumScreen(navController, scrollBehavior)
-                                    }
-                                    composable(
-                                        route = "artist/{artistId}",
-                                        arguments = listOf(
-                                            navArgument("artistId") {
-                                                type = NavType.StringType
-                                            }
-                                        )
-                                    ) {
-                                        ArtistScreen(navController, scrollBehavior)
-                                    }
-                                    composable(
-                                        route = "artist/{artistId}/songs",
-                                        arguments = listOf(
-                                            navArgument("artistId") {
-                                                type = NavType.StringType
-                                            }
-                                        )
-                                    ) {
-                                        ArtistSongsScreen(navController, scrollBehavior)
-                                    }
-                                    composable(
-                                        route = "artist/{artistId}/albums",
-                                        arguments = listOf(
-                                            navArgument("artistId") {
-                                                type = NavType.StringType
-                                            }
-                                        )
-                                    ) {
-                                        ArtistAlbumsScreen(navController, scrollBehavior)
-                                    }
-                                    composable(
-                                        route = "artist/{artistId}/items?browseId={browseId}?params={params}",
-                                        arguments = listOf(
-                                            navArgument("artistId") {
-                                                type = NavType.StringType
-                                            },
-                                            navArgument("browseId") {
-                                                type = NavType.StringType
-                                                nullable = true
-                                            },
-                                            navArgument("params") {
-                                                type = NavType.StringType
-                                                nullable = true
-                                            }
-                                        )
-                                    ) {
-                                        ArtistItemsScreen(navController, scrollBehavior)
-                                    }
-                                    composable(
-                                        route = "online_playlist/{playlistId}",
-                                        arguments = listOf(
-                                            navArgument("playlistId") {
-                                                type = NavType.StringType
-                                            }
-                                        )
-                                    ) {
-                                        OnlinePlaylistScreen(navController, scrollBehavior)
-                                    }
-                                    composable(
-                                        route = "local_playlist/{playlistId}",
-                                        arguments = listOf(
-                                            navArgument("playlistId") {
-                                                type = NavType.StringType
-                                            }
-                                        )
-                                    ) {
-                                        LocalPlaylistScreen(navController, scrollBehavior)
-                                    }
-                                    composable(
-                                        route = "auto_playlist/{playlistId}",
-                                        arguments = listOf(
-                                            navArgument("playlistId") {
-                                                type = NavType.StringType
-                                            }
-                                        )
-                                    ) {
-                                        AutoPlaylistScreen(navController, scrollBehavior)
-                                    }
-                                    composable(
-                                        route = "youtube_browse/{browseId}?params={params}",
-                                        arguments = listOf(
-                                            navArgument("browseId") {
-                                                type = NavType.StringType
-                                                nullable = true
-                                            },
-                                            navArgument("params") {
-                                                type = NavType.StringType
-                                                nullable = true
-                                            }
-                                        )
-                                    ) {
-                                        YouTubeBrowseScreen(navController, scrollBehavior)
-                                    }
-                                    composable("settings") {
-                                        SettingsScreen(navController, scrollBehavior)
-                                    }
-                                    composable("settings/appearance") {
-                                        AppearanceSettings(navController, scrollBehavior)
-                                    }
-                                    composable("settings/interface") {
-                                        InterfaceSettings(navController, scrollBehavior)
-                                    }
-                                    composable("settings/library") {
-                                        LibrarySettings(navController, scrollBehavior)
-                                    }
-                                    composable("settings/library/lyrics") {
-                                        LyricsSettings(navController, scrollBehavior)
-                                    }
-                                    composable("settings/account_sync") {
-                                        AccountSyncSettings(navController, scrollBehavior)
-                                    }
-                                    composable("settings/player") {
-                                        PlayerSettings(navController, scrollBehavior)
-                                    }
-                                    composable("settings/storage") {
-                                        StorageSettings(navController, scrollBehavior)
-                                    }
-                                    composable("settings/backup_restore") {
-                                        BackupAndRestore(navController, scrollBehavior)
-                                    }
-                                    composable("settings/local") {
-                                        LocalPlayerSettings(navController, scrollBehavior)
-                                    }
-                                    composable("settings/experimental") {
-                                        ExperimentalSettings(navController, scrollBehavior)
-                                    }
-                                    composable("settings/about") {
-                                        AboutScreen(navController, scrollBehavior)
-                                    }
-                                    composable("settings/about/attribution") {
-                                        AttributionScreen(navController, scrollBehavior)
-                                    }
-                                    composable("settings/about/oss_licenses") {
-                                        LibrariesScreen(navController, scrollBehavior)
-                                    }
-                                    composable("login") {
-                                        LoginScreen(navController)
-                                    }
-
-                                    composable("setup_wizard") {
-                                        SetupWizard(navController)
-                                    }
-                                }
-                            }
-
-                            val navbar: @Composable() (() -> Unit) = @Composable {
-                                val navigationBarHeight by animateDpAsState(
-                                    targetValue = NavigationBarHeight,
-                                    animationSpec = NavigationBarAnimationSpec,
-                                    label = ""
-                                )
-
-                                NavigationBar(
-                                    modifier = Modifier
-                                        .align(Alignment.BottomCenter)
-                                        .height(bottomInset + getNavPadding())
-                                        .offset {
-                                            if (navigationBarHeight == 0.dp) {
-                                                IntOffset(
-                                                    x = 0,
-                                                    y = (bottomInset + NavigationBarHeight).roundToPx()
-                                                )
-                                            } else {
-                                                val slideOffset =
-                                                    (bottomInset + NavigationBarHeight) * playerBottomSheetState.progress.coerceIn(
-                                                        0f,
-                                                        1f
-                                                    )
-                                                val hideOffset =
-                                                    (bottomInset + NavigationBarHeight) * (1 - navigationBarHeight / NavigationBarHeight)
-                                                IntOffset(
-                                                    x = 0,
-                                                    y = (slideOffset + hideOffset).roundToPx()
-                                                )
-                                            }
+                                            if (currentRouteIndex == -1 || currentRouteIndex > previousRouteIndex)
+                                                slideInHorizontally { it / 8 } + fadeIn(tween(200))
+                                            else
+                                                slideInHorizontally { -it / 8 } + fadeIn(tween(200))
                                         },
-                                    containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(6.dp)
-                                ) {
-                                    navigationItems.fastForEach { screen ->
-                                        // TODO: display selection when based on root page user entered
-//                                        val isSelected = navBackStackEntry?.destination?.hierarchy?.any {
-//                                            it.route?.substringBefore("?")?.substringBefore("/") == screen.route
-//                                        } == true
-                                        NavigationBarItem(
-                                            selected = navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } == true,
-                                            icon = {
-                                                Icon(
-                                                    screen.icon,
-                                                    contentDescription = null
-                                                )
-                                            },
-                                            label = {
-                                                if (!slimNav) {
-                                                    Text(
-                                                        text = stringResource(screen.titleId),
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                }
-                                            },
-                                            onClick = {
-                                                if (playerBottomSheetState.isExpanded) {
-                                                    playerBottomSheetState.collapseSoft()
-                                                }
-
-                                                if (navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } == true) {
-                                                    navBackStackEntry?.savedStateHandle?.set(
-                                                        "scrollToTop",
-                                                        true
-                                                    )
-                                                } else if (navigationItems.none { scr -> navBackStackEntry?.destination?.hierarchy?.any { it.route == scr.route } == true }) {
-                                                    // this eye bleach allows you to navigate back when you tap on the navbar on a non-root page
-                                                    // TODO: nav3 allows us to access back stack... maybe do indicators properly and remove this hack
-                                                    navController.navigateUp()
-                                                } else {
-                                                    navController.navigate(screen.route) {
-                                                        popUpTo(navController.graph.startDestinationId) {
-                                                            saveState = true
-                                                        }
-                                                        launchSingleTop = true
-                                                        restoreState = true
-                                                    }
-                                                }
-
-                                                haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
+                                        exitTransition = {
+                                            val currentRouteIndex = navigationItems.indexOfFirst {
+                                                it.route == initialState.destination.route
                                             }
-                                        )
-                                    }
-                                }
-                            }
-
-                            @Composable
-                            fun navRail(alignment: Alignment) {
-                                val layoutDirection = LocalLayoutDirection.current
-                                val navigationBarHeight by animateDpAsState(
-                                    targetValue = NavigationBarHeight,
-                                    animationSpec = NavigationBarAnimationSpec,
-                                    label = ""
-                                )
-                                val leftInset = remember {
-                                    derivedStateOf {
-                                        playerAwareWindowInsets.getLeft(density, layoutDirection).dp
-                                    }
-                                }
-                                NavigationRail(
-                                    containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(6.dp),
-                                    header = {
-                                        Spacer(Modifier.height(8.dp))
-                                        Image(
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .padding(start = 8.dp),
-                                            painter = painterResource(R.drawable.small_icon),
-                                            contentDescription = null
-                                        )
-                                    },
-                                    modifier = Modifier
-                                        .align(alignment)
-                                        .fillMaxHeight()
-                                        .verticalScroll(rememberScrollState())
-                                        .offset {
-                                            if (navigationBarHeight == 0.dp) {
-                                                IntOffset(
-                                                    x = 0,
-                                                    y = (bottomInset + NavigationBarHeight).roundToPx()
-                                                )
-                                            } else {
-                                                val slideOffset =
-                                                    (bottomInset + NavigationBarHeight + leftInset.value) *
-                                                            playerBottomSheetState.progress.coerceIn(0f, 1f)
-                                                val hideOffset =
-                                                    (bottomInset + NavigationBarHeight) * (1 - navigationBarHeight / NavigationBarHeight)
-                                                IntOffset(
-                                                    x = -(slideOffset + hideOffset).roundToPx(),
-                                                    y = 0
-                                                )
+                                            val targetRouteIndex = navigationItems.indexOfFirst {
+                                                it.route == targetState.destination.route
                                             }
+
+                                            if (targetRouteIndex == -1 || targetRouteIndex > currentRouteIndex)
+                                                slideOutHorizontally { -it / 8 } + fadeOut(tween(200))
+                                            else
+                                                slideOutHorizontally { it / 8 } + fadeOut(tween(200))
                                         },
-                                ) {
-                                    navigationItems.fastForEach { screen ->
-                                        // TODO: display selection when based on root page user entered
-//                                                val isSelected = navBackStackEntry?.destination?.hierarchy?.any {
-//                                                    it.route?.substringBefore("?")?.substringBefore("/") == screen.route
-//                                                } == true
-                                        NavigationRailItem(
-                                            selected = navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } == true,
-                                            icon = {
-                                                Icon(
-                                                    screen.icon,
-                                                    contentDescription = null
-                                                )
-                                            },
-                                            label = {
-                                                if (!slimNav) {
-                                                    Text(
-                                                        text = stringResource(screen.titleId),
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
+                                        popEnterTransition = {
+                                            val currentRouteIndex = navigationItems.indexOfFirst {
+                                                it.route == targetState.destination.route
+                                            }
+                                            val previousRouteIndex = navigationItems.indexOfFirst {
+                                                it.route == initialState.destination.route
+                                            }
+
+                                            if (previousRouteIndex != -1 && previousRouteIndex < currentRouteIndex)
+                                                slideInHorizontally { it / 8 } + fadeIn(tween(200))
+                                            else
+                                                slideInHorizontally { -it / 8 } + fadeIn(tween(200))
+                                        },
+                                        popExitTransition = {
+                                            val currentRouteIndex = navigationItems.indexOfFirst {
+                                                it.route == initialState.destination.route
+                                            }
+                                            val targetRouteIndex = navigationItems.indexOfFirst {
+                                                it.route == targetState.destination.route
+                                            }
+
+                                            if (currentRouteIndex != -1 && currentRouteIndex < targetRouteIndex)
+                                                slideOutHorizontally { -it / 8 } + fadeOut(tween(200))
+                                            else
+                                                slideOutHorizontally { it / 8 } + fadeOut(tween(200))
+                                        },
+                                        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
+                                    )
+                                    {
+                                        composable(Screens.Home.route) {
+                                            HomeScreen(navController)
+                                        }
+                                        composable(Screens.Songs.route) {
+                                            LibrarySongsScreen(navController)
+                                        }
+                                        composable(Screens.Folders.route) {
+                                            LibraryFoldersScreen(navController, scrollBehavior)
+                                        }
+                                        composable(
+                                            route = "${Screens.Folders.route}/{path}",
+                                            arguments = listOf(
+                                                navArgument("path") {
+                                                    type = NavType.StringType
                                                 }
-                                            },
-                                            onClick = {
-                                                if (playerBottomSheetState.isExpanded) {
-                                                    playerBottomSheetState.collapseSoft()
+                                            )
+                                        ) {
+                                            FolderScreen(navController, scrollBehavior)
+                                        }
+                                        composable(Screens.Artists.route) {
+                                            LibraryArtistsScreen(navController)
+                                        }
+                                        composable(Screens.Albums.route) {
+                                            LibraryAlbumsScreen(navController)
+                                        }
+                                        composable(Screens.Playlists.route) {
+                                            LibraryPlaylistsScreen(navController)
+                                        }
+                                        composable(Screens.Library.route) {
+                                            LibraryScreen(navController, scrollBehavior)
+                                        }
+                                        composable("history") {
+                                            HistoryScreen(navController)
+                                        }
+                                        composable("stats") {
+                                            StatsScreen(navController)
+                                        }
+                                        composable("mood_and_genres") {
+                                            MoodAndGenresScreen(navController, scrollBehavior)
+                                        }
+                                        composable("account") {
+                                            AccountScreen(navController, scrollBehavior)
+                                        }
+
+                                        composable(
+                                            route = "browse/{browseId}",
+                                            arguments = listOf(
+                                                navArgument("browseId") {
+                                                    type = NavType.StringType
                                                 }
-                                                if (navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } == true) {
-                                                    navBackStackEntry?.savedStateHandle?.set(
-                                                        "scrollToTop",
-                                                        true
+                                            )
+                                        ) {
+                                            BrowseScreen(
+                                                navController,
+                                                scrollBehavior,
+                                                it.arguments?.getString("browseId")
+                                            )
+                                        }
+                                        composable(
+                                            route = "search",
+                                        ) {
+                                            SearchBarContainer(navController, scrollBehavior)
+                                        }
+                                        composable(
+                                            route = "search/{query}",
+                                            arguments = listOf(
+                                                navArgument("query") {
+                                                    type = NavType.StringType
+                                                }
+                                            )
+                                        ) {
+                                            OnlineSearchResult(navController)
+                                        }
+                                        composable(
+                                            route = "album/{albumId}",
+                                            arguments = listOf(
+                                                navArgument("albumId") {
+                                                    type = NavType.StringType
+                                                },
+                                            )
+                                        ) {
+                                            AlbumScreen(navController, scrollBehavior)
+                                        }
+                                        composable(
+                                            route = "artist/{artistId}",
+                                            arguments = listOf(
+                                                navArgument("artistId") {
+                                                    type = NavType.StringType
+                                                }
+                                            )
+                                        ) {
+                                            ArtistScreen(navController, scrollBehavior)
+                                        }
+                                        composable(
+                                            route = "artist/{artistId}/songs",
+                                            arguments = listOf(
+                                                navArgument("artistId") {
+                                                    type = NavType.StringType
+                                                }
+                                            )
+                                        ) {
+                                            ArtistSongsScreen(navController, scrollBehavior)
+                                        }
+                                        composable(
+                                            route = "artist/{artistId}/albums",
+                                            arguments = listOf(
+                                                navArgument("artistId") {
+                                                    type = NavType.StringType
+                                                }
+                                            )
+                                        ) {
+                                            ArtistAlbumsScreen(navController, scrollBehavior)
+                                        }
+                                        composable(
+                                            route = "artist/{artistId}/items?browseId={browseId}?params={params}",
+                                            arguments = listOf(
+                                                navArgument("artistId") {
+                                                    type = NavType.StringType
+                                                },
+                                                navArgument("browseId") {
+                                                    type = NavType.StringType
+                                                    nullable = true
+                                                },
+                                                navArgument("params") {
+                                                    type = NavType.StringType
+                                                    nullable = true
+                                                }
+                                            )
+                                        ) {
+                                            ArtistItemsScreen(navController, scrollBehavior)
+                                        }
+                                        composable(
+                                            route = "online_playlist/{playlistId}",
+                                            arguments = listOf(
+                                                navArgument("playlistId") {
+                                                    type = NavType.StringType
+                                                }
+                                            )
+                                        ) {
+                                            OnlinePlaylistScreen(navController, scrollBehavior)
+                                        }
+                                        composable(
+                                            route = "local_playlist/{playlistId}",
+                                            arguments = listOf(
+                                                navArgument("playlistId") {
+                                                    type = NavType.StringType
+                                                }
+                                            )
+                                        ) {
+                                            LocalPlaylistScreen(navController, scrollBehavior)
+                                        }
+                                        composable(
+                                            route = "auto_playlist/{playlistId}",
+                                            arguments = listOf(
+                                                navArgument("playlistId") {
+                                                    type = NavType.StringType
+                                                }
+                                            )
+                                        ) {
+                                            AutoPlaylistScreen(navController, scrollBehavior)
+                                        }
+                                        composable(
+                                            route = "youtube_browse/{browseId}?params={params}",
+                                            arguments = listOf(
+                                                navArgument("browseId") {
+                                                    type = NavType.StringType
+                                                    nullable = true
+                                                },
+                                                navArgument("params") {
+                                                    type = NavType.StringType
+                                                    nullable = true
+                                                }
+                                            )
+                                        ) {
+                                            YouTubeBrowseScreen(navController, scrollBehavior)
+                                        }
+                                        composable("settings") {
+                                            SettingsScreen(navController, scrollBehavior)
+                                        }
+                                        composable("settings/appearance") {
+                                            AppearanceSettings(navController, scrollBehavior)
+                                        }
+                                        composable("settings/interface") {
+                                            InterfaceSettings(navController, scrollBehavior)
+                                        }
+                                        composable("settings/library") {
+                                            LibrarySettings(navController, scrollBehavior)
+                                        }
+                                        composable("settings/library/lyrics") {
+                                            LyricsSettings(navController, scrollBehavior)
+                                        }
+                                        composable("settings/account_sync") {
+                                            AccountSyncSettings(navController, scrollBehavior)
+                                        }
+                                        composable("settings/player") {
+                                            PlayerSettings(navController, scrollBehavior)
+                                        }
+                                        composable("settings/storage") {
+                                            StorageSettings(navController, scrollBehavior)
+                                        }
+                                        composable("settings/backup_restore") {
+                                            BackupAndRestore(navController, scrollBehavior)
+                                        }
+                                        composable("settings/local") {
+                                            LocalPlayerSettings(navController, scrollBehavior)
+                                        }
+                                        composable("settings/experimental") {
+                                            ExperimentalSettings(navController, scrollBehavior)
+                                        }
+                                        composable("settings/about") {
+                                            AboutScreen(navController, scrollBehavior)
+                                        }
+                                        composable("settings/about/attribution") {
+                                            AttributionScreen(navController, scrollBehavior)
+                                        }
+                                        composable("settings/about/oss_licenses") {
+                                            LibrariesScreen(navController, scrollBehavior)
+                                        }
+                                        composable("login") {
+                                            LoginScreen(navController)
+                                        }
+
+                                        composable("setup_wizard") {
+                                            SetupWizard(navController)
+                                        }
+                                    }
+                                }
+
+                                val navbar: @Composable() (() -> Unit) = @Composable {
+                                    val navigationBarHeight by animateDpAsState(
+                                        targetValue = NavigationBarHeight,
+                                        animationSpec = NavigationBarAnimationSpec,
+                                        label = ""
+                                    )
+
+                                    NavigationBar(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomCenter)
+                                            .height(bottomInset + getNavPadding())
+                                            .offset {
+                                                if (navigationBarHeight == 0.dp) {
+                                                    IntOffset(
+                                                        x = 0,
+                                                        y = (bottomInset + NavigationBarHeight).roundToPx()
                                                     )
                                                 } else {
-                                                    navController.navigate(screen.route) {
-                                                        popUpTo(navController.graph.startDestinationId) {
-                                                            saveState = true
-                                                        }
-
-                                                        launchSingleTop = true
-                                                        restoreState = true
-                                                    }
+                                                    val slideOffset =
+                                                        (bottomInset + NavigationBarHeight) * playerBottomSheetState.progress.coerceIn(
+                                                            0f,
+                                                            1f
+                                                        )
+                                                    val hideOffset =
+                                                        (bottomInset + NavigationBarHeight) * (1 - navigationBarHeight / NavigationBarHeight)
+                                                    IntOffset(
+                                                        x = 0,
+                                                        y = (slideOffset + hideOffset).roundToPx()
+                                                    )
                                                 }
-
-                                                haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
-                                            }
+                                            },
+                                        containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(
+                                            6.dp
                                         )
+                                    ) {
+                                        navigationItems.fastForEach { screen ->
+                                            // TODO: display selection when based on root page user entered
+                                            //                                        val isSelected = navBackStackEntry?.destination?.hierarchy?.any {
+                                            //                                            it.route?.substringBefore("?")?.substringBefore("/") == screen.route
+                                            //                                        } == true
+                                            NavigationBarItem(
+                                                selected = navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } == true,
+                                                icon = {
+                                                    Icon(
+                                                        screen.icon,
+                                                        contentDescription = null
+                                                    )
+                                                },
+                                                label = {
+                                                    if (!slimNav) {
+                                                        Text(
+                                                            text = stringResource(screen.titleId),
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                },
+                                                onClick = {
+                                                    if (playerBottomSheetState.isExpanded) {
+                                                        playerBottomSheetState.collapseSoft()
+                                                    }
+
+                                                    if (navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } == true) {
+                                                        navBackStackEntry?.savedStateHandle?.set(
+                                                            "scrollToTop",
+                                                            true
+                                                        )
+//                                                    } else if (navigationItems.none { scr -> navBackStackEntry?.destination?.hierarchy?.any { it.route == scr.route } == true }) {
+//                                                        // this eye bleach allows you to navigate back when you tap on the navbar on a non-root page
+//                                                        // TODO: nav3 allows us to access back stack... maybe do indicators properly and remove this hack
+//                                                        navController.navigateUp()
+                                                    } else {
+                                                        navController.navigate(screen.route) {
+                                                            popUpTo(navController.graph.startDestinationId) {
+                                                                saveState = false
+                                                            }
+                                                            launchSingleTop = true
+                                                            restoreState = true
+                                                        }
+                                                    }
+
+                                                    haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
+                                                }
+                                            )
+                                        }
                                     }
                                 }
-                            }
 
-                            val bottomSheetMenu: @Composable() (() -> Unit) = @Composable {
-                                BottomSheetMenu(
-                                    state = LocalMenuState.current,
-                                    modifier = Modifier.align(Alignment.BottomCenter)
-                                )
-                            }
+                                @Composable
+                                fun navRail(alignment: Alignment) {
+                                    val layoutDirection = LocalLayoutDirection.current
+                                    val navigationBarHeight by animateDpAsState(
+                                        targetValue = NavigationBarHeight,
+                                        animationSpec = NavigationBarAnimationSpec,
+                                        label = ""
+                                    )
+                                    val leftInset = remember {
+                                        derivedStateOf {
+                                            playerAwareWindowInsets.getLeft(density, layoutDirection).dp
+                                        }
+                                    }
+                                    NavigationRail(
+                                        containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(
+                                            6.dp
+                                        ),
+                                        header = {
+                                            Spacer(Modifier.height(8.dp))
+                                            Image(
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .padding(start = 8.dp),
+                                                painter = painterResource(R.drawable.small_icon),
+                                                contentDescription = null
+                                            )
+                                        },
+                                        modifier = Modifier
+                                            .align(alignment)
+                                            .fillMaxHeight()
+                                            .verticalScroll(rememberScrollState())
+                                            .offset {
+                                                if (navigationBarHeight == 0.dp) {
+                                                    IntOffset(
+                                                        x = 0,
+                                                        y = (bottomInset + NavigationBarHeight).roundToPx()
+                                                    )
+                                                } else {
+                                                    val slideOffset =
+                                                        (bottomInset + NavigationBarHeight + leftInset.value) *
+                                                                playerBottomSheetState.progress.coerceIn(
+                                                                    0f,
+                                                                    1f
+                                                                )
+                                                    val hideOffset =
+                                                        (bottomInset + NavigationBarHeight) * (1 - navigationBarHeight / NavigationBarHeight)
+                                                    IntOffset(
+                                                        x = -(slideOffset + hideOffset).roundToPx(),
+                                                        y = 0
+                                                    )
+                                                }
+                                            },
+                                    ) {
+                                        navigationItems.fastForEach { screen ->
+                                            // TODO: display selection when based on root page user entered
+                                            //                                                val isSelected = navBackStackEntry?.destination?.hierarchy?.any {
+                                            //                                                    it.route?.substringBefore("?")?.substringBefore("/") == screen.route
+                                            //                                                } == true
+                                            NavigationRailItem(
+                                                selected = navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } == true,
+                                                icon = {
+                                                    Icon(
+                                                        screen.icon,
+                                                        contentDescription = null
+                                                    )
+                                                },
+                                                label = {
+                                                    if (!slimNav) {
+                                                        Text(
+                                                            text = stringResource(screen.titleId),
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                },
+                                                onClick = {
+                                                    if (playerBottomSheetState.isExpanded) {
+                                                        playerBottomSheetState.collapseSoft()
+                                                    }
+                                                    if (navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } == true) {
+                                                        navBackStackEntry?.savedStateHandle?.set(
+                                                            "scrollToTop",
+                                                            true
+                                                        )
+                                                    } else {
+                                                        navController.navigate(screen.route) {
+                                                            popUpTo(navController.graph.startDestinationId) {
+                                                                saveState = true
+                                                            }
 
-                            // phone
-                            if (!tabMode) {
+                                                            launchSingleTop = true
+                                                            restoreState = true
+                                                        }
+                                                    }
+
+                                                    haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+
+                                val bottomSheetMenu: @Composable() (() -> Unit) = @Composable {
+                                    BottomSheetMenu(
+                                        state = LocalMenuState.current,
+                                        modifier = Modifier.align(Alignment.BottomCenter)
+                                    )
+                                }
+
+                                // phone
                                 navHost()
 
                                 SearchBarContainer(navController, scrollBehavior)
 
                                 if (oobeStatus >= OOBE_VERSION) {
-                                    if (!navigationItems.contains(Screens.Player)) {
-                                        BottomSheetPlayer(
-                                            state = playerBottomSheetState,
-                                            navController = navController
-                                        )
-                                    }
+                                    BottomSheetPlayer(
+                                        state = playerBottomSheetState,
+                                        navController = navController
+                                    )
 
                                     if (!useNavRail) {
                                         navbar()
@@ -955,86 +1079,68 @@ class MainActivity : ComponentActivity() {
                                         .windowInsetsPadding(LocalPlayerAwareWindowInsets.current)
                                         .align(Alignment.BottomCenter)
                                 )
-                            } else {
-                                // tabmode only enables >= 600dp (unless it's forced on). For those who wish to try down
-                                // to the widescreen limit, 320dp player is the minimum acceptable size for the player
-                                val playerW = (maxW.value * 0.4).coerceIn(320.0, 500.0)
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .width(playerW.dp)
-                                    ) {
-                                        if (oobeStatus >= OOBE_VERSION && !navigationItems.contains(Screens.Player)) {
-                                            PlayerScreen(navController)
-                                        }
+
+                                // Setup wizard
+                                LaunchedEffect(Unit) {
+                                    if (oobeStatus < OOBE_VERSION) {
+                                        navController.navigate("setup_wizard")
                                     }
+                                }
 
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
+                                if (BuildConfig.DEBUG && SHOW_DEBUG_OVERLAY) {
+                                    val debugColour = Color.Red
+                                    Column(
+                                        modifier = Modifier.padding(start = 50.dp, top = 100.dp)
                                     ) {
-                                        navHost()
-
-                                        SearchBarContainer(navController, scrollBehavior)
-
-                                        if (oobeStatus >= OOBE_VERSION) {
-                                            navbar()
-                                        }
-                                        bottomSheetMenu()
-
-                                        SnackbarHost(
-                                            hostState = snackbarHostState,
-                                            modifier = Modifier
-                                                .windowInsetsPadding(LocalPlayerAwareWindowInsets.current)
-                                                .align(Alignment.BottomCenter)
+                                        Text(
+                                            text = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) | ${BuildConfig.FLAVOR}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = debugColour
+                                        )
+                                        Text(
+                                            text = "${BuildConfig.APPLICATION_ID} | ${BuildConfig.BUILD_TYPE}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = debugColour
+                                        )
+                                        Text(
+                                            text = "${Build.BRAND} ${Build.DEVICE} (${Build.MODEL})",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = debugColour
+                                        )
+                                        Text(
+                                            text = "${Build.VERSION.SDK_INT} (${Build.ID})",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = debugColour
                                         )
                                     }
-                                }
-
-                            }
-
-                            // Setup wizard
-                            LaunchedEffect(Unit) {
-                                if (oobeStatus < OOBE_VERSION) {
-                                    navController.navigate("setup_wizard")
-                                }
-                            }
-
-                            if (BuildConfig.DEBUG) {
-                                val debugColour = Color.Red
-                                Column(
-                                    modifier = Modifier.padding(start = 50.dp, top = 100.dp)
-                                ) {
-                                    Text(
-                                        text = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) | ${BuildConfig.FLAVOR}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = debugColour
-                                    )
-                                    Text(
-                                        text = "${BuildConfig.APPLICATION_ID} | ${BuildConfig.BUILD_TYPE}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = debugColour
-                                    )
-                                    Text(
-                                        text = "${Build.BRAND} ${Build.DEVICE} (${Build.MODEL})",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = debugColour
-                                    )
-                                    Text(
-                                        text = "${Build.VERSION.SDK_INT} (${Build.ID})",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = debugColour
-                                    )
                                 }
                             }
                         }
                     }
                 }
             }
+        } catch (e: IndexOutOfBoundsException) {
+            Log.e(MAIN_TAG, "FATAL: Caught IndexOutOfBoundsException on startup, likely due to corrupt queue state. Wiping queues and restarting.")
+
+            // Manually get the DatabaseEntryPoint from Hilt. This is the correct and safe way.
+            val hiltEntryPoint = EntryPointAccessors.fromApplication(
+                applicationContext,
+                DatabaseEntryPoint::class.java
+            )
+            val database = hiltEntryPoint.database()
+
+            // Now, use the safe database instance to clear the corrupted data.
+            runBlocking<Unit>(Dispatchers.IO) {
+                database.deleteAllQueues()
+            }
+
+            // Restart the app with a clean state.
+            val intent = Intent(this, MainActivity::class.java)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            startActivity(intent)
+
+            // Terminate the crashed process.
+            Runtime.getRuntime().exit(0)
         }
     }
 
@@ -1066,3 +1172,10 @@ val LocalDownloadUtil = staticCompositionLocalOf<DownloadUtil> { error("No Downl
 val LocalSyncUtils = staticCompositionLocalOf<SyncUtils> { error("No SyncUtils provided") }
 val LocalNetworkConnected = staticCompositionLocalOf<Boolean> { error("No Network Status provided") }
 val LocalSnackbarHostState = staticCompositionLocalOf<SnackbarHostState> { error("No SnackbarHostState provided") }
+
+// Add this interface at the end of the file
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface DatabaseEntryPoint {
+    fun database(): MusicDatabase
+}

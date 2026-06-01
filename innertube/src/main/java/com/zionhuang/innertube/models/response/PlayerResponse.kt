@@ -70,13 +70,13 @@ data class PlayerResponse(
     @Serializable
     data class VideoDetails(
         val videoId: String,
-        val title: String,
-        val author: String,
-        val channelId: String,
-        val lengthSeconds: String,
+        val title: String?, // Change to optional
+        val author: String?, // Change to optional
+        val channelId: String?, // Change to optional
+        val lengthSeconds: String?, // Change to optional
         val musicVideoType: String?,
-        val viewCount: String,
-        val thumbnail: Thumbnails,
+        val viewCount: String?, // Change to optional
+        val thumbnail: Thumbnails?, // Change to optional
     )
 
     @Serializable

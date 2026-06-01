@@ -3,6 +3,7 @@ package com.dd3boh.outertune.ui.screens.library
 import android.content.pm.PackageManager
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.activity.result.launch
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -53,8 +55,12 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEachReversed
+import androidx.core.net.toUri
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.media3.common.MediaItem
 import androidx.navigation.NavController
+//import androidx.privacysandbox.tools.core.generator.build
 import com.dd3boh.outertune.LocalMenuState
 import com.dd3boh.outertune.LocalPlayerAwareWindowInsets
 import com.dd3boh.outertune.LocalPlayerConnection
@@ -88,6 +94,10 @@ import com.dd3boh.outertune.ui.utils.MEDIA_PERMISSION_LEVEL
 import com.dd3boh.outertune.utils.rememberEnumPreference
 import com.dd3boh.outertune.utils.rememberPreference
 import com.dd3boh.outertune.viewmodels.LibrarySongsViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -234,26 +244,54 @@ fun LibrarySongsScreen(
                                 title = stringResource(R.string.queue_all_songs),
                                 leadingIcon = { Icon(Icons.Rounded.PlayArrow, null) },
                                 action = {
-                                    playerConnection.playQueue(
-                                        ListQueue(
-                                            title = context.getString(R.string.queue_all_songs),
-                                            items = songs.map { it.toMediaMetadata() },
-                                            startShuffled = false,
+                                    // --- DEFINITIVE FIX: Use viewModelScope to launch the coroutine ---
+                                    viewModel.viewModelScope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            message = "Loading...", // TODO: Add a string resource for this
+                                            duration = SnackbarDuration.Short
                                         )
-                                    )
+                                        val mediaMetadataList = withContext(Dispatchers.IO) {
+                                            val endIndex = 10.coerceAtMost(songs.size)
+                                            songs.subList(0, endIndex).map { it.toMediaMetadata() }
+                                        }
+                                        playerConnection.playQueue(
+                                            ListQueue(
+                                                title = context.getString(R.string.queue_all_songs),
+                                                items = mediaMetadataList,
+                                                fullSongList = songs, // Pass the original, full list of songs
+                                                startShuffled = false,
+                                                startIndex = 0
+                                            )
+                                        )
+                                    }
+                                    // --- END FIX ---
                                 }
                             ),
                             DropdownItem(
                                 title = stringResource(R.string.shuffle),
                                 leadingIcon = { Icon(Icons.Rounded.Shuffle, null) },
                                 action = {
-                                    playerConnection.playQueue(
-                                        ListQueue(
-                                            title = context.getString(R.string.queue_all_songs),
-                                            items = songs.map { it.toMediaMetadata() },
-                                            startShuffled = true,
+                                    // --- DEFINITIVE FIX: Use viewModelScope to launch the coroutine ---
+                                    viewModel.viewModelScope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            message = "Loading...", // TODO: Add a string resource for this
+                                            duration = SnackbarDuration.Short
                                         )
-                                    )
+                                        val mediaMetadataList = withContext(Dispatchers.IO) {
+                                            val endIndex = 10.coerceAtMost(songs.size)
+                                            songs.subList(0, endIndex).map { it.toMediaMetadata() }
+                                        }
+                                        playerConnection.playQueue(
+                                            ListQueue(
+                                                title = context.getString(R.string.queue_all_songs),
+                                                items = mediaMetadataList,
+                                                fullSongList = songs, // Pass the original, full list of songs
+                                                startShuffled = true,
+                                                startIndex = 0
+                                            )
+                                        )
+                                    }
+                                    // --- END FIX ---
                                 }
                             ),
                         ),
@@ -360,14 +398,33 @@ fun LibrarySongsScreen(
 
                         thumbnailSize = thumbnailSize,
                         onPlay = {
-                            playerConnection.playQueue(
-                                ListQueue(
-                                    title = context.getString(R.string.queue_all_songs),
-                                    items = songs.map { it.toMediaMetadata() },
-                                    startIndex = index
+                            // --- DEFINITIVE FIX: Use viewModelScope to launch the coroutine ---
+                            viewModel.viewModelScope.launch {
+                                // 1. Give immediate feedback to the user on the Main thread
+                                snackbarHostState.showSnackbar(
+                                    message = "Loading...", // TODO: Add a string resource for this
+                                    duration = SnackbarDuration.Short
                                 )
-                            )
+                                // 2. Switch to a background thread for the heavy list processing
+                                val mediaMetadataList = withContext(Dispatchers.IO) {
+                                    val startIndex = index
+                                    val endIndex = (startIndex + 10).coerceAtMost(songs.size)
+                                    songs.subList(startIndex, endIndex).map { it.toMediaMetadata() }
+                                }
+                                // 3. Resumes on the Main thread to safely interact with the player
+                                playerConnection.playQueue(
+                                    ListQueue(
+                                        title = context.getString(R.string.queue_all_songs),
+                                        items = mediaMetadataList,
+                                        fullSongList = songs, // Pass the original, full list of songs
+                                        // The start index for this NEW queue is 0, because the clicked song is the first item.
+                                        startIndex = 0
+                                    )
+                                )
+                            }
+                            // --- END FIX ---
                         },
+
                         modifier = Modifier
                             .fillMaxWidth()
                             .animateItem()

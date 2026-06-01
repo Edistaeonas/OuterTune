@@ -12,54 +12,72 @@ import android.net.ConnectivityManager
 import android.util.Log
 import androidx.media3.common.PlaybackException
 import com.dd3boh.outertune.constants.AudioQuality
-import com.dd3boh.outertune.utils.YTPlayerUtils.MAIN_CLIENT
-import com.dd3boh.outertune.utils.YTPlayerUtils.STREAM_FALLBACK_CLIENTS
-import com.dd3boh.outertune.utils.YTPlayerUtils.validateStatus
 import com.dd3boh.outertune.utils.potoken.PoTokenGenerator
 import com.dd3boh.outertune.utils.potoken.PoTokenResult
 import com.zionhuang.innertube.NewPipeUtils
 import com.zionhuang.innertube.YouTube
 import com.zionhuang.innertube.models.YouTubeClient
+import com.zionhuang.innertube.models.YouTubeClient.Companion.ANDROID
 import com.zionhuang.innertube.models.YouTubeClient.Companion.ANDROID_VR_NO_AUTH
 import com.zionhuang.innertube.models.YouTubeClient.Companion.IOS
 import com.zionhuang.innertube.models.YouTubeClient.Companion.WEB_REMIX
 import com.zionhuang.innertube.models.response.PlayerResponse
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
+import okhttp3.Dns
+import java.io.IOException
+import java.net.InetAddress
+import java.net.Inet4Address
+import java.net.UnknownHostException
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 
 object YTPlayerUtils {
 
     private const val TAG = "YTPlayerUtils"
 
-    private val httpClient = OkHttpClient.Builder()
+//    private val httpClient = OkHttpClient.Builder()
+//        .proxy(YouTube.proxy)
+//        .build()
+
+
+    val httpClient = OkHttpClient.Builder()
         .proxy(YouTube.proxy)
+        .dns(object : Dns {
+            override fun lookup(hostname: String): List<InetAddress> {
+                return try {
+                    // Prefer IPv4, but allow fallback to IPv6 if lookup is slow/empty
+                    val addresses = Dns.SYSTEM.lookup(hostname)
+                    val ipv4 = addresses.filter { it is Inet4Address }
+                    ipv4.ifEmpty { addresses }
+                } catch (e: Exception) {
+                    // Corrected: explicitly use the java.net class
+                    throw UnknownHostException(e.message)
+                }
+            }
+        })
+        .connectionPool(okhttp3.ConnectionPool(15, 5, java.util.concurrent.TimeUnit.MINUTES))
+        .retryOnConnectionFailure(true)
+        .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS) // Reduced from 30s to speed up the skip to the next song in case of network unavailability
+        .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
         .build()
+
 
     private val poTokenGenerator = PoTokenGenerator()
 
-    /**
-     * The main client is used for metadata and initial streams.
-     * Do not use other clients for this because it can result in inconsistent metadata.
-     * For example other clients can have different normalization targets (loudnessDb).
-     *
-     * [com.zionhuang.innertube.models.YouTubeClient.ANDROID_VR_NO_AUTH] Is temporally used as it is out only working client
-     * [com.zionhuang.innertube.models.YouTubeClient.WEB_REMIX] should be preferred here because currently it is the only client which provides:
-     * - the correct metadata (like loudnessDb)
-     * - premium formats
-     */
-    private val MAIN_CLIENT: YouTubeClient = ANDROID_VR_NO_AUTH
+    private val QUICK_FETCH_CLIENT: YouTubeClient = WEB_REMIX // for metadata
+    private val MAIN_CLIENT: YouTubeClient get() = ANDROID_VR_NO_AUTH // for music
 
     /**
-     * Clients used for fallback streams in case the streams of the main client do not work.
+     * Fallback clients for stream extraction.
      */
-    private val STREAM_FALLBACK_CLIENTS: Array<YouTubeClient> = arrayOf(
-        // Could not parse deobfuscation function
-//        WEB_REMIX,
-//        ANDROID,
-//        TVHTML5,
-//        TVHTML5_SIMPLY_EMBEDDED_PLAYER,
-        IOS, // recent api changes produce error 403 after 30 seconds
+    private val STREAM_FALLBACK_CLIENTS: Array<YouTubeClient> get() = arrayOf(
+        ANDROID,
+        IOS
     )
-
 
     data class PlaybackData(
         val audioConfig: PlayerResponse.PlayerConfig.AudioConfig?,
@@ -68,238 +86,258 @@ object YTPlayerUtils {
         val format: PlayerResponse.StreamingData.Format,
         val streamUrl: String,
         val streamExpiresInSeconds: Int,
+        val userAgent: String,
+        val visitorData: String?,
     )
 
-    /**
-     * Custom player response intended to use for playback.
-     * Metadata like audioConfig and videoDetails are from [MAIN_CLIENT].
-     * Format & stream can be from [MAIN_CLIENT] or [STREAM_FALLBACK_CLIENTS].
-     */
+    // -----------------------------------------------------------------------------------------
+
+
+
     suspend fun playerResponseForPlayback(
         videoId: String,
         playlistId: String? = null,
         audioQuality: AudioQuality,
         connectivityManager: ConnectivityManager,
     ): Result<PlaybackData> = runCatching {
-        Log.d(TAG, "Playback info requested: $videoId")
 
-        /**
-         * This is required for some clients to get working streams however
-         * it should not be forced for the [MAIN_CLIENT] because the response of the [MAIN_CLIENT]
-         * is required even if the streams won't work from this client.
-         * This is why it is allowed to be null.
-         */
-        val signatureTimestamp = getSignatureTimestampOrNull(videoId)
-
-        val isLoggedIn = YouTube.cookie != null
-        val sessionId =
-            if (isLoggedIn) {
-                // signed in sessions use dataSyncId as identifier
-                YouTube.dataSyncId
-            } else {
-                // signed out sessions use visitorData as identifier
-                YouTube.visitorData
+        // 1. Mandatory Session Handshake (Only if missing)
+        if (YouTube.visitorData == null) {
+            Log.w(TAG, "SESSION_LOG: No session found. Attempting fast handshake...")
+            // Try the lighter/faster visitor data endpoint first
+            YouTube.visitorData().onSuccess {
+                YouTube.visitorData = it
+                Log.i(TAG, "SESSION_LOG: Fast handshake success: $it")
             }
 
-        Log.d(TAG, "[$videoId] signatureTimestamp: $signatureTimestamp, isLoggedIn: $isLoggedIn")
-
-        val (webPlayerPot, webStreamingPot) = getWebClientPoTokenOrNull(videoId, sessionId)?.let {
-            Pair(it.playerRequestPoToken, it.streamingDataPoToken)
-        } ?: Pair(null, null).also {
-            Log.w(TAG, "[$videoId] No po token")
+            if (YouTube.visitorData == null) {
+                // Fallback to home() only if fast method fails
+                repeat(2) { attempt ->
+                    runCatching { YouTube.home() }
+                    if (YouTube.visitorData != null) return@repeat
+                    delay(1000L * (attempt + 1))
+                }
+            }
+        } else {
+            Log.i(TAG, "SESSION_LOG: Using existing session: ${YouTube.visitorData}")
         }
 
-        val mainPlayerResponse =
-            YouTube.player(videoId, playlistId, MAIN_CLIENT, signatureTimestamp, webPlayerPot)
-                .getOrThrow()
+        val signatureTimestamp = getSignatureTimestampOrNull(videoId)
+        val webPlayerPot = getWebClientPoTokenOrNull(videoId, YouTube.visitorData ?: YouTube.dataSyncId)?.playerRequestPoToken
 
-        val audioConfig = mainPlayerResponse.playerConfig?.audioConfig
-        val videoDetails = mainPlayerResponse.videoDetails
-        val playbackTracking = mainPlayerResponse.playbackTracking
+        // 2. Metadata Phase: Quick fetch (Short timeout so it never blocks the music)
+        val mainResponse = withTimeoutOrNull(3000) {
+            YouTube.player(videoId, playlistId, QUICK_FETCH_CLIENT, signatureTimestamp, webPlayerPot).getOrNull()
+        }
 
-        var format: PlayerResponse.StreamingData.Format? = null
-        var streamUrl: String? = null
-        var streamExpiresInSeconds: Int? = null
+        // 3. Stream Search Phase: Try MAIN_CLIENT, then fall back to others if blocked
+        val clientsToTry = listOf(MAIN_CLIENT) + STREAM_FALLBACK_CLIENTS
+        var response: PlayerResponse? = null
+        var lastErrorReason: String? = null
+        var activeWebPlayerPot = webPlayerPot // Start with the initial token
+        var winningUserAgent = MAIN_CLIENT.userAgent
 
-        var streamPlayerResponse: PlayerResponse? = null
-        for (clientIndex in (-1 until STREAM_FALLBACK_CLIENTS.size)) {
-            // reset for each client
-            format = null
-            streamUrl = null
-            streamExpiresInSeconds = null
+        for (client in clientsToTry) {
+            Log.i(TAG, "Attempting extraction with client: ${client.clientName}")
 
-            // decide which client to use for streams and load its player response
-            val client: YouTubeClient
-            if (clientIndex == -1) {
-                Log.d(TAG, "Trying client: ${MAIN_CLIENT.clientName}")
-                // try with streams from main client first
-                client = MAIN_CLIENT
-                streamPlayerResponse = mainPlayerResponse
-            } else {
-                Log.d(TAG, "Trying fallback client: ${STREAM_FALLBACK_CLIENTS[clientIndex].clientName}")
-                // after main client use fallback clients
-                client = STREAM_FALLBACK_CLIENTS[clientIndex]
+            // If the previous client was flagged, we ensure we get a NEW session AND a NEW PO Token
+//2026.03.11
+//  // FIX: Remove session reset from the loop.
+//    // Only perform a handshake at the start of the function (which you already do).
+//            if (YouTube.visitorData == null) {
+//                Log.i(TAG, "YouTube.visitorData is null so we call YouTube.home() ")
+//                Log.i(TAG, "Session is empty, performing single handshake for ${client.clientName}")
+//                runCatching { YouTube.home() }
+//                Log.i(TAG, "Session wiped, performing PO Token generation...")
+//                // Re-generate PO Token for the new visitorData
+//                activeWebPlayerPot = getWebClientPoTokenOrNull(videoId, YouTube.visitorData ?: YouTube.dataSyncId)?.playerRequestPoToken
+//                delay(1500)
+//            }
 
-                if (client.loginRequired && !isLoggedIn) {
-                    // skip client if it requires login but user is not logged in
-                    continue
-                }
+            Log.i(TAG, "Attempting extraction with client: ${client.clientName}")
+            val result = YouTube.player(
+                videoId = videoId,
+                playlistId = null,
+                client = client,
+                signatureTimestamp = signatureTimestamp,
+                webPlayerPot = activeWebPlayerPot // important to be not null and synchronised, for Android VR bot check.
+            ).getOrNull()
 
-                streamPlayerResponse =
-                    YouTube.player(videoId, playlistId, client, signatureTimestamp, webPlayerPot)
-                        .getOrNull()
-            }
+//            if (result?.playabilityStatus?.status == "OK") {
+//                response = result
+//                winningUserAgent = client.userAgent
+//                Log.i(TAG, "Successfully fetched stream using client: ${client.clientName} userAgent: $winningUserAgent")
+//                break
+//            } else {
+//                lastErrorReason = result?.playabilityStatus?.reason
+//                Log.w(TAG, "Client ${client.clientName} failed: $lastErrorReason")
+//
+//
+//                // If flagged as bot, just try the next client identity in the list.
+//                // Switching from VR to Mobile headers is often enough.
+//                if (lastErrorReason?.contains("bot", ignoreCase = true) == true) {
+//                    YouTube.visitorData = null
+//                    delay(1000)
+//                    continue
+//                }
+//            }
+            // CASE 1: YouTube returned "OK"
+            if (result?.playabilityStatus?.status == "OK") {
+                val format = result.streamingData?.adaptiveFormats?.filter { it.isAudio }?.maxByOrNull { it.bitrate }
+                val streamUrl = format?.let { findUrlOrNull(it, videoId) }
 
-            Log.d(TAG, "[$videoId] stream client: ${client.clientName}, " +
-                    "playabilityStatus: ${streamPlayerResponse?.playabilityStatus?.let {
-                        it.status + (it.reason?.let { " - $it" } ?: "")
-                    }}")
-
-            // process current client response
-            if (streamPlayerResponse?.playabilityStatus?.status == "OK") {
-                format =
-                    findFormat(
-                        streamPlayerResponse,
-                        audioQuality,
-                        connectivityManager,
-                    ) ?: continue
-                streamUrl = findUrlOrNull(format, videoId) ?: continue
-                streamExpiresInSeconds =
-                    streamPlayerResponse.streamingData?.expiresInSeconds ?: continue
-
-                if (client.useWebPoTokens && webStreamingPot != null) {
-                    streamUrl += "&pot=$webStreamingPot";
-                }
-
-                if (clientIndex == STREAM_FALLBACK_CLIENTS.size - 1) {
-                    /** skip [validateStatus] for last client */
-                    break
-                }
-                if (validateStatus(streamUrl)) {
-                    // working stream found
-                    Log.i(TAG, "[$videoId] [${client.clientName}] found working stream")
+                if (streamUrl != null) {
+                    response = result
+                    winningUserAgent = client.userAgent
+                    Log.i(TAG, "Successfully fetched stream using client: ${client.clientName}")
                     break
                 } else {
-                    Log.w(TAG, "[$videoId] [${client.clientName}] got bad http status code")
+                    Log.w(TAG, "Client ${client.clientName} returned OK but extraction failed (no URL). Resetting session and trying fallback...")
+
+                    if (client.clientName == "ANDROID_VR") {
+                        com.zionhuang.innertube.models.YouTubeClient.rotateVrVersion()
+                    }
+
+                    // CRITICAL: Wipe the flagged session so the next client gets a fresh one
+                    YouTube.visitorData = null
+                    YouTube.visitorData().onSuccess {
+                        YouTube.visitorData = it
+                        Log.i(TAG, "SESSION_LOG: Soft-block recovery - New visitorData obtained")
+                    }
+                    delay(800)
+                    continue
+                }
+            }
+            // CASE 2: YouTube returned an error (like "Bot")
+            else {
+                lastErrorReason = result?.playabilityStatus?.reason
+                Log.w(TAG, "Client ${client.clientName} failed: $lastErrorReason")
+
+                // THE KEY RESET: If flagged as bot, wipe the session
+                // so the NEXT client in the loop gets a fresh start.
+                if (lastErrorReason?.contains("bot", ignoreCase = true) == true) {
+                    YouTube.visitorData = null
+                    delay(1000)
+                    continue
                 }
             }
         }
 
-        if (streamPlayerResponse == null) {
-            throw Exception("Bad stream player response")
-        }
-        if (streamPlayerResponse.playabilityStatus.status != "OK") {
-            throw PlaybackException(
-                streamPlayerResponse.playabilityStatus.reason,
-                null,
-                PlaybackException.ERROR_CODE_REMOTE_ERROR
-            )
-        }
-        if (streamExpiresInSeconds == null) {
-            throw Exception("Missing stream expire time")
-        }
-        if (format == null) {
-            throw Exception("Could not find format")
-        }
-        if (streamUrl == null) {
-            throw Exception("Could not find stream url")
-        }
+        // Ensure we actually got a valid response after trying all clients
+        val finalResponse = response ?: throw IOException("All extraction clients failed. Last reason: $lastErrorReason")
 
-        Log.d(TAG, "[$videoId] stream url: $streamUrl")
+        val allFormats = (finalResponse.streamingData?.adaptiveFormats ?: emptyList()) +
+                (finalResponse.streamingData?.formats ?: emptyList())
+
+        val format = allFormats.filter { it.isAudio }.maxByOrNull { it.bitrate }
+            ?: throw IOException("No audio format found")
+
+        val streamUrl = findUrlOrNull(format, videoId) ?: throw IOException("Extraction failed")
 
         PlaybackData(
-            audioConfig,
-            videoDetails,
-            playbackTracking,
-            format,
-            streamUrl,
-            streamExpiresInSeconds,
+            audioConfig = mainResponse?.playerConfig?.audioConfig ?: finalResponse.playerConfig?.audioConfig,
+            videoDetails = mainResponse?.videoDetails ?: finalResponse.videoDetails,
+            playbackTracking = mainResponse?.playbackTracking ?: finalResponse.playbackTracking,
+            format = format,
+            streamUrl = streamUrl,
+            streamExpiresInSeconds = finalResponse.streamingData?.expiresInSeconds ?: 0,
+            userAgent = winningUserAgent,
+            visitorData = YouTube.visitorData
         )
     }
 
-    /**
-     * Simple player response intended to use for metadata only.
-     * Stream URLs of this response might not work so don't use them.
-     */
-    suspend fun playerResponseForMetadata(
-        videoId: String,
-        playlistId: String? = null,
-    ): Result<PlayerResponse> =
-        YouTube.player(videoId, playlistId, client = WEB_REMIX) // ANDROID_VR does not work with history
+// -----------------------------------------------------------------------------------------
+
+    suspend fun playerResponseForMetadata(videoId: String, playlistId: String? = null): Result<PlayerResponse> =
+        YouTube.player(videoId, playlistId, client = WEB_REMIX)
 
     private fun findFormat(
         playerResponse: PlayerResponse,
         audioQuality: AudioQuality,
         connectivityManager: ConnectivityManager,
     ): PlayerResponse.StreamingData.Format? =
-        playerResponse.streamingData?.adaptiveFormats
-            ?.filter { it.isAudio }
-            ?.maxByOrNull {
-                it.bitrate * when (audioQuality) {
-                    AudioQuality.AUTO -> if (connectivityManager.isActiveNetworkMetered) -1 else 1
-                    AudioQuality.HIGH -> 1
-                    AudioQuality.LOW -> -1
-                } + (if (it.mimeType.startsWith("audio/webm")) 10240 else 0) // prefer opus stream
-            }
+        playerResponse.streamingData?.adaptiveFormats?.filter { it.isAudio }?.maxByOrNull {
+            it.bitrate * when (audioQuality) {
+                AudioQuality.AUTO -> if (connectivityManager.isActiveNetworkMetered) -1 else 1
+                AudioQuality.HIGH -> 1
+                AudioQuality.LOW -> -1
+            } + (if (it.mimeType.startsWith("audio/webm")) 10240 else 0)
+        }
 
-    /**
-     * Checks if the stream url returns a successful status.
-     * If this returns true the url is likely to work.
-     * If this returns false the url might cause an error during playback.
-     */
     private fun validateStatus(url: String): Boolean {
-        try {
-            val requestBuilder = okhttp3.Request.Builder()
-                .head()
-                .url(url)
-            val response = httpClient.newCall(requestBuilder.build()).execute()
-            return response.isSuccessful
-        } catch (e: Exception) {
-            reportException(e)
-        }
-        return false
+        return try {
+            val request = okhttp3.Request.Builder().url(url).addHeader("Range", "bytes=0-1").build()
+            httpClient.newCall(request).execute().use { it.isSuccessful }
+        } catch (e: Exception) { false }
     }
 
-    /**
-     * Wrapper around the [NewPipeUtils.getSignatureTimestamp] function which reports exceptions
-     */
-    private fun getSignatureTimestampOrNull(
-        videoId: String
-    ): Int? {
-        return NewPipeUtils.getSignatureTimestamp(videoId)
-            .onFailure {
-                reportException(it)
+    private fun getSignatureTimestampOrNull(videoId: String): Int? =
+        NewPipeUtils.getSignatureTimestamp(videoId).onFailure { reportException(it) }.getOrNull()
+
+    private fun findUrlOrNull(format: PlayerResponse.StreamingData.Format, videoId: String): String? {
+        // If the URL is already provided and not scrambled, use it immediately
+        if (format.url != null) return format.url
+        // Otherwise use the extractor
+        return NewPipeUtils.getStreamUrl(format, videoId).getOrNull()
+    }
+
+    private suspend fun getWebClientPoTokenOrNull(videoId: String, sessionId: String?): PoTokenResult? {
+        if (sessionId == null) return null
+        return withContext(Dispatchers.IO) {
+            try {
+                kotlinx.coroutines.withTimeout(5000) {
+                    poTokenGenerator.getWebClientPoToken(videoId, sessionId)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "[$videoId] PoToken timed out", e)
+                null
             }
-            .getOrNull()
-    }
-
-    /**
-     * Wrapper around the [NewPipeUtils.getStreamUrl] function which reports exceptions
-     */
-    private fun findUrlOrNull(
-        format: PlayerResponse.StreamingData.Format,
-        videoId: String
-    ): String? {
-        return NewPipeUtils.getStreamUrl(format, videoId)
-            .onFailure {
-                reportException(it)
-            }
-            .getOrNull()
-    }
-
-    /**
-     * Wrapper around the [PoTokenGenerator.getWebClientPoToken] function which reports exceptions
-     */
-    private fun getWebClientPoTokenOrNull(videoId: String, sessionId: String?): PoTokenResult? {
-        if (sessionId == null) {
-            Log.d(TAG, "[$videoId] Session identifier is null")
-            return null
         }
+    }
+
+    /**
+     * Forcefully clears the connection pool and dispatcher.
+     * Essential for recovering from 0:00 hangs after network transitions.
+     */
+    fun nukeNetworkPool() {
+        Log.w(TAG, "Nuking OkHttp connection pool to clear stale sockets.")
+        httpClient.connectionPool.evictAll()
+        httpClient.dispatcher.cancelAll()
+    }
+
+    /**
+     * Performs a robust check to see if the network is strong enough for data transfer.
+     * Uses the shared OkHttpClient to ensure proxy/DNS settings are respected.
+     * Strict timeout helps identify weak (EDGE/GPRS) connections.
+     */
+    suspend fun isInternetActuallyAvailable(): Boolean = withContext(Dispatchers.IO) {
         try {
-            return poTokenGenerator.getWebClientPoToken(videoId, sessionId)
+            val request = Request.Builder()
+                .url("https://connectivitycheck.gstatic.com/generate_204")
+                .header("Connection", "close")
+                .build()
+
+            // 4.5s timeout: strict enough to identify weak connections that would fail streaming
+            val client = httpClient.newBuilder()
+                .connectTimeout(4500, TimeUnit.MILLISECONDS)
+                .readTimeout(4500, TimeUnit.MILLISECONDS)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                response.code == 204
+            }
         } catch (e: Exception) {
-            reportException(e)
+            false
         }
-        return null
+    }
+
+    /**
+     * Returns the required HTTP headers for YouTube playback and caching.
+     */
+    fun getPlaybackHeaders(userAgent: String, visitorData: String? = null): Map<String, String> {
+        val headers = mutableMapOf("User-Agent" to userAgent)
+        val vData = visitorData ?: YouTube.visitorData
+        vData?.let { headers["X-Goog-Visitor-Id"] = it }
+        return headers
     }
 }
