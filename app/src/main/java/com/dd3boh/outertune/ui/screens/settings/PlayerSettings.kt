@@ -49,7 +49,10 @@ import com.dd3boh.outertune.ui.component.button.IconButton
 import com.dd3boh.outertune.ui.dialog.InfoLabel
 import com.dd3boh.outertune.ui.screens.settings.fragments.AudioEffectsFrag
 import com.dd3boh.outertune.ui.screens.settings.fragments.AudioQualityFrag
+import com.dd3boh.outertune.ui.screens.settings.fragments.BlacklistedArtistsFrag
+import com.dd3boh.outertune.ui.screens.settings.fragments.CustomLinkArtistsFrag
 import com.dd3boh.outertune.ui.screens.settings.fragments.GlobalRadioFrag
+import com.dd3boh.outertune.ui.screens.settings.fragments.NoLinkArtistsFrag
 import com.dd3boh.outertune.ui.screens.settings.fragments.PlaybackBehaviourFrag
 import com.dd3boh.outertune.ui.screens.settings.fragments.PlayerGeneralFrag
 import com.dd3boh.outertune.ui.utils.backToMain
@@ -176,6 +179,27 @@ fun PlayerSettings(
                         onKeepAliveChange(it)
                     }
                 )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                BlacklistedArtistsFrag()
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                NoLinkArtistsFrag()
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                CustomLinkArtistsFrag()
             }
         }
         Spacer(Modifier.height(96.dp))

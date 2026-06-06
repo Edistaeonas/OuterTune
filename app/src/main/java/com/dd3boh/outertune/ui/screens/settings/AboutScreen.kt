@@ -159,7 +159,7 @@ fun AboutScreen(
             IconLabelButton(
                 text = "GitHub",
                 painter = painterResource(R.drawable.github),
-                onClick = { uriHandler.openUri("https://github.com/OuterTune/OuterTune") },
+                onClick = { uriHandler.openUri("https://github.com/EdisTaeonas/OuterTune") },
                 modifier = Modifier.padding(horizontal = 8.dp)
             )
 

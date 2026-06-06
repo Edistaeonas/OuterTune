@@ -78,6 +78,10 @@ import com.dd3boh.outertune.constants.GlobalRadioSongsCountKey
 import com.dd3boh.outertune.constants.GlobalRadioUseLocalKey
 import com.dd3boh.outertune.constants.GlobalRadioUseOnlineKey
 import com.dd3boh.outertune.constants.KeepAliveKey
+import com.dd3boh.outertune.constants.RadioDJEnabledKey
+import com.dd3boh.outertune.constants.RadioDJLanguageKey
+import com.dd3boh.outertune.constants.RadioDJStyleKey
+import com.dd3boh.outertune.constants.SYSTEM_DEFAULT
 import com.dd3boh.outertune.constants.MAX_PLAYER_CONSECUTIVE_ERR
 import com.dd3boh.outertune.constants.MaxQueuesKey
 import com.dd3boh.outertune.constants.MediaSessionConstants.CommandToggleLike
@@ -255,6 +259,7 @@ class MusicService : MediaLibraryService(),
         dataStore.get(AudioDecoderKey, DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
     private val isGaplessOffloadAllowed = dataStore.get(AudioGaplessOffloadKey, false)
     val playerVolume = MutableStateFlow(dataStore.get(PlayerVolumeKey, 1f).coerceIn(0f, 1f))
+    private val muteForDJ = MutableStateFlow(false)
 
     private var isAudioEffectSessionOpened = false
 
@@ -299,9 +304,12 @@ class MusicService : MediaLibraryService(),
     private var isShowingTimedTags = false
     private var timedTagJob: Job? = null
 
+    private var radioDJ: RadioDJ? = null
+
     override fun onCreate() {
         instance = this
         Log.i(TAG, " *********** Starting MusicService **************")
+        radioDJ = RadioDJ(this)
         // --- ADD THIS: Set process priority to Background Audio ---
         android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO)
         super.onCreate()
@@ -558,8 +566,8 @@ class MusicService : MediaLibraryService(),
                 initQueue()
             }
 
-            combine(playerVolume, normalizeFactor) { playerVolume, normalizeFactor ->
-                playerVolume * normalizeFactor
+            combine(playerVolume, normalizeFactor, muteForDJ) { playerVolume, normalizeFactor, mute ->
+                if (mute) 0f else playerVolume * normalizeFactor
             }.collectLatest(scope) {
                 withContext(Dispatchers.Main) {
                     player.volume = it
@@ -781,6 +789,23 @@ class MusicService : MediaLibraryService(),
     fun toggleStartRadio() {
         val mediaMetadata = player.currentMetadata ?: return
         playQueue(YouTubeQueue.radio(mediaMetadata), isRadio = true)
+    }
+
+    fun testRadioDJ() {
+        val metadata = com.dd3boh.outertune.models.MediaMetadata(
+            id = "test",
+            title = "Test Song",
+            artists = listOf(com.dd3boh.outertune.models.MediaMetadata.Artist(name = "Test Artist", id = null)),
+            duration = 180,
+            thumbnailUrl = null,
+            genre = null
+        )
+        radioDJ?.speakAnnouncement(
+            metadata = metadata,
+            style = dataStore.get(RadioDJStyleKey, "natural"),
+            language = dataStore.get(RadioDJLanguageKey, SYSTEM_DEFAULT),
+            onFinished = {}
+        )
     }
 
     // The Global Artist Radio (new in 2026). Creates a playlist mixing local songs with songs taken
@@ -2365,6 +2390,58 @@ class MusicService : MediaLibraryService(),
         // Trigger background pre-caching for upcoming tracks
         runProactivePreCache()
 
+        // --- RADIO DJ ANNOUNCEMENT ---
+        val isAuto = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO
+        val radioDJEnabled = dataStore.get(RadioDJEnabledKey, false)
+        val isGlobalRadio = currentContinuableQueue is GlobalRadioQueue
+
+        if (isAuto && radioDJEnabled && isGlobalRadio && mediaItem != null) {
+            // Mute and stop immediately on the main thread to ensure no blips
+            muteForDJ.value = true
+            player.playWhenReady = false
+            player.seekTo(0)
+
+            offloadScope.launch {
+                var metadata = mediaItem.metadata
+
+                // If year or album is missing, try a FAST background fetch (max 1.5s)
+                if (metadata != null && (metadata.year == null || metadata.album?.title?.startsWith("§") == true)) {
+                    Log.i(TAG, "RADIO DJ: Metadata incomplete for '${metadata.title}'. Attempting fast enrichment...")
+                    try {
+                        withTimeoutOrNull(1500) {
+                            val enrichment = MetadataEnricher.findEnrichment(metadata!!.title, metadata!!.artists.first().name)
+                            if (enrichment != null) {
+                                metadata = metadata!!.copy(
+                                    year = enrichment.year,
+                                    album = enrichment.albumTitle?.let { com.dd3boh.outertune.models.MediaMetadata.Album(id = enrichment.albumId ?: "", title = it) }
+                                )
+                                Log.i(TAG, "RADIO DJ: Fast enrichment success! Found year: ${metadata?.year}")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "RADIO DJ: Enrichment error", e)
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    metadata?.let { finalMetadata ->
+                        radioDJ?.speakAnnouncement(
+                            metadata = finalMetadata,
+                            style = dataStore.get(RadioDJStyleKey, "natural"),
+                            language = dataStore.get(RadioDJLanguageKey, SYSTEM_DEFAULT),
+                            onFinished = {
+                                muteForDJ.value = false
+                                player.play()
+                            }
+                        )
+                    } ?: run {
+                        // Fallback: If metadata is null, just resume
+                        muteForDJ.value = false
+                        player.play()
+                    }
+                }
+            }
+        }
     }
 
     //    override fun onPlaybackStateChanged(@Player.State playbackState: Int) {
@@ -2542,6 +2619,7 @@ class MusicService : MediaLibraryService(),
 
     override fun onDestroy() {
         Log.i(TAG, "Terminating MusicService.")
+        radioDJ?.shutdown()
         deInitQueue()
 
         mediaSession.player.stop()

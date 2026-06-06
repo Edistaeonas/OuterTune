@@ -477,17 +477,6 @@ class LocalMediaScanner(val context: Context, scannerImpl: ScannerImpl) {
         scannerProgressTotal.value = delta.size
         scannerProgressCurrent.value = 0
 
-        // no need now because it is runScanner is calling finalize now.
-//        if (delta.isEmpty()) {
-//            Log.i(TAG, "No new songs found. Proceeding to finalization.")
-//            scannerState.value = 3
-//            disableSongsByPath(allPassedPaths, database)
-//            finalize(database, allProcessedSongs )
-//            scannerState.value = 0
-//            Log.i(TAG, "------------ SYNC: Finished Quick (additive delta) Library Sync (no new songs) ------------")
-//            return allProcessedSongs
-//        }
-
         val batchSize = 100
 
         delta.chunked(batchSize).forEach { batch ->
@@ -535,7 +524,6 @@ class LocalMediaScanner(val context: Context, scannerImpl: ScannerImpl) {
         } else {
             Log.i(TAG, "Automatic scan: Skipping disableSongsByPath to prevent data loss.")
         }
-        //finalize(database)  moved elsewhere
 
         scannerState.value = 4
         Log.i(TAG, "------------ SYNC: Finished Quick (additive delta) Library Sync ------------")
@@ -693,7 +681,6 @@ class LocalMediaScanner(val context: Context, scannerImpl: ScannerImpl) {
         Log.i(TAG, "All batches synced. Starting finalization...")
         scannerState.value = 3
         disableSongs(allScannedSongs, database)
-        //finalize(database)  moved elsewhere
 
         scannerState.value = 4
         Log.i(TAG, "------------ SYNC: Finished FULL Library Sync ------------")
@@ -810,30 +797,20 @@ class LocalMediaScanner(val context: Context, scannerImpl: ScannerImpl) {
 
                 val cleanPath = rawPath.removeSuffix("/")
 
-                // --- DEFINITIVE FIX: Filter paths in memory ---
                 val isAllowed = allowedPathPrefixes.any { cleanPath.startsWith(it) }
                 val isExcluded = excludedPathPrefixes.any { cleanPath.startsWith(it) }
 
                 if (!isAllowed || isExcluded) {
-                    continue // This is the line that skips files not in your chosen folders.
+                    continue
                 }
 
-                // --- Log ONLY the files we are actually processing ---
                 if (logCounter % 100 == 0) {
                     Log.d("FolderScan", "Processing path: '$cleanPath'")
                 }
                 logCounter++
 
 
-                // If we get here, the song is valid and should be processed.
                 val id = c.getLong(idColumn)
-                val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
-
-//                var title: String? = c.getString(titleColumn)
-//                var artist: String? = c.getString(artistColumn)
-//                var album: String? = c.getString(albumColumn)
-
-                // --- SANITIZE STRINGS FROM MEDIASTORE ---
                 val rawTitleFromProvider = c.getString(titleColumn)
                 var title = rawTitleFromProvider?.let { sanitizeMetadata(it) }
                 if (rawTitleFromProvider != null && title != null && rawTitleFromProvider != title) {
@@ -843,19 +820,14 @@ class LocalMediaScanner(val context: Context, scannerImpl: ScannerImpl) {
                 val artistRaw = c.getString(artistColumn)?.let { sanitizeMetadata(it) }
                 var albumRaw = c.getString(albumColumn)?.let { sanitizeMetadata(it) }
 
-                // --- NEW: Detect if MediaStore used the folder name as a fallback ---
                 val parentFolderName = File(cleanPath).parentFile?.name
                 if (albumRaw != null && albumRaw == parentFolderName) {
                     albumRaw = "§$albumRaw"
-                    Log.d("FolderScan", "MediaStore fallback detected!!!!!!!!! Marking album as: '$albumRaw'")
                 }
 
                 if (title.isNullOrBlank()) {
                     val rawName = c.getString(nameColumn)?.substringBeforeLast('.')
                     title = rawName?.let { sanitizeMetadata(it) } ?: "Unknown Title"
-                    if (rawName != null && title != "Unknown Title" && rawName != title) {
-                        Log.d("MetadataSanitize", "Title (from filename) modified: '$rawName' -> '$title'")
-                    }
                 }
 
                 val duration = c.getInt(durationColumn) / 1000
@@ -882,7 +854,6 @@ class LocalMediaScanner(val context: Context, scannerImpl: ScannerImpl) {
                     discNumberColumn?.let { discNumber = c.getInt(it) }
                     albumArtistColumn?.let { albumArtistRaw = c.getString(it) }
                 }
-                // Sanitize the metadata
                 val albumArtist = albumArtistRaw?.let { sanitizeMetadata(it) }
 
                 val year = rawYear?.toIntOrNull()
@@ -897,21 +868,16 @@ class LocalMediaScanner(val context: Context, scannerImpl: ScannerImpl) {
 
                 val artistList = ArrayList<ArtistEntity>()
                 val genresList = ArrayList<GenreEntity>()
-//                artist?.split(ARTIST_SEPARATORS)?.forEach { artistVal ->
-//                    artistList.add(ArtistEntity(ArtistEntity.generateArtistId(), artistVal, isLocal = true))
-//                }
                 artistRaw?.split(ARTIST_SEPARATORS)?.forEach { artistVal ->
                     artistList.add(ArtistEntity(ArtistEntity.generateArtistId(), artistVal, isLocal = true))
                 }
 
-                // --- ADD THIS LOG TO VERIFY MULTI-ARTIST SONGS ---
                 if (artistList.size > 1) {
                     Log.d(
                         "MultiArtistDebug",
                         "Song '${title ?: name}' has multiple artists. Original string: '$artistRaw'. Parsed artists: ${artistList.map { it.name }}"
                     )
                 }
-                // --- END LOG ---
                 genre?.split(ARTIST_SEPARATORS)?.forEach { genreVal ->
                     genresList.add(GenreEntity(GenreEntity.generateGenreId(), genreVal, isLocal = true))
                 }
@@ -991,13 +957,11 @@ class LocalMediaScanner(val context: Context, scannerImpl: ScannerImpl) {
         }
 
         scannerState.value = 3
-        // --- DEFINITIVE FIX: Only disable songs if it's a manual scan ---
         if (!isAutomaticScan) {
             disableSongsByPath(mediaStoreSongs.mapNotNull { it.song.song.localPath }, database)
         } else {
             Log.i(TAG, "Automatic scan: Skipping disableSongsByPath to prevent data loss.")
         }
-        //finalize(database) ===> can't call it now, the database is not ready with all the new artists
         scannerState.value = 4
 
         Log.i(TAG, "------------ SYNC: Finished MediaStore FULL Library Sync ------------")
@@ -1008,50 +972,36 @@ class LocalMediaScanner(val context: Context, scannerImpl: ScannerImpl) {
 
     private fun normalizePathForMap(path: String?): String {
         if (path == null) return ""
-        // Remove redundant slashes and lowercase for case-insensitive matching
         return path.replace("//", "/").removeSuffix("/").lowercase()
     }
 
 
     private suspend fun disableSongsByPath(newSongs: List<String>, database: MusicDatabase) {
         Log.i(TAG, "Start optimized finalize (disableSongsByPath). Valid songs count: ${newSongs.size}")
-
-        // 1. Create a Set for O(1) lookup speed instead of O(N)
         val validPathSet = newSongs.toHashSet()
-
-        // 2. Clear invalid paths from the database first
         database.disableInvalidLocalSongs()
-
-        // 3. Filter songs in memory to find which ones are no longer in valid folders
         val allSongs = database.allLocalSongs()
         val songsToDisable = allSongs.filter { it.song.localPath != null && it.song.localPath !in validPathSet }
 
         if (songsToDisable.isNotEmpty()) {
             Log.i(TAG, "Disabling ${songsToDisable.size} songs that are no longer in valid folders.")
-            // 4. Wrap all updates in a single transaction for maximum speed
             database.withSuspendingTransaction {
                 songsToDisable.forEach { song ->
                     disableLocalSong(song.song.id)
                 }
             }
         }
-
         Log.i(TAG, "Finished (disableSongsByPath) job")
     }
 
     private suspend fun disableSongs(newSongs: List<Song>, database: MusicDatabase) {
         Log.i(TAG, "Start optimized finalize (disableSongs). Valid songs count: ${newSongs.size}")
-
-        // 1. Create a Set of valid paths for instant lookup
         val validPathSet = newSongs.mapNotNull { it.song.localPath }.toHashSet()
-
-        // 2. Identify songs in DB that are no longer present in the scan
         val allSongsInDb = database.allLocalSongs()
         val songsToDisable = allSongsInDb.filter { it.song.localPath != null && it.song.localPath !in validPathSet }
 
         if (songsToDisable.isNotEmpty()) {
             Log.i(TAG, "Disabling ${songsToDisable.size} songs.")
-            // 3. Batch disable in a single transaction
             database.withSuspendingTransaction {
                 songsToDisable.forEach { song ->
                     disableLocalSong(song.song.id)
@@ -1117,16 +1067,11 @@ class LocalMediaScanner(val context: Context, scannerImpl: ScannerImpl) {
         artistsByName.forEach { (artistName, artistGroup) ->
             if (artistGroup.size <= 1) return@forEach
 
-            if (artistName.equals("matchbox 20", ignoreCase = true)) {
-                Log.i("ArtistLinkDebug", "DE-DUPLICATION: Found group for 'matchbox 20' with ${artistGroup.size} entries.")
-            }
-
             val masterArtist = artistGroup.first()
             val duplicates = artistGroup.drop(1)
 
             Log.d("ArtistLinkDebug", "Master is '${masterArtist.artist.name}' (${masterArtist.artist.id}). Merging ${duplicates.size} duplicates.")
 
-            // Sequential merge to avoid type inference issues and ensure DB consistency
             for (duplicate in duplicates) {
                 LocalMediaScanner.swapArtists(duplicate.artist, masterArtist.artist, database)
             }
@@ -1146,6 +1091,16 @@ class LocalMediaScanner(val context: Context, scannerImpl: ScannerImpl) {
         val allLocal = database.allLocalArtists()
         scannerProgressTotal.value = allLocal.size
 
+        val nolinkArtists = withContext(Dispatchers.IO) {
+            database.getAllNoLinkArtistsSync().map { it.name.lowercase() }.toSet()
+        }
+        val customLinkArtists = withContext(Dispatchers.IO) {
+            database.getAllCustomLinkArtistsSync().associate { it.originalName.lowercase() to it.customLink }
+        }
+        val likedArtists = withContext(Dispatchers.IO) {
+            database.allArtistsRaw().filter { !it.isLocal && it.bookmarkedAt != null }
+        }
+
         // 1. Read user preference ONCE before the loop for efficiency and consistency
         val sensitivityName = context.dataStore[ArtistLinkingSensitivityKey] ?: ArtistLinkingSensitivity.COMPLEX.name
         val sensitivity = try { ArtistLinkingSensitivity.valueOf(sensitivityName) } catch (e: Exception) { ArtistLinkingSensitivity.COMPLEX }
@@ -1161,43 +1116,11 @@ class LocalMediaScanner(val context: Context, scannerImpl: ScannerImpl) {
 
         // List of artists allowed to print detailed linking logs
         val debugArtists = setOf(
-            "ac/dc",
-            "amps",
-            "amy macdonald",
-            "berenice",
-            "catherine",
-            "dolly",
-            "double",
-            "emma marrone",
-            "emilie simon",
-            "Émilie Simon",
-            "george thorogood",
-            "grease",
-            "halo",
-            "hooverphonic",
-            "hot butter",
-            "hot chocolate",
-            "jean michel jarre",
-            "joyrider",
-            "killer",
-            "lennon murphy",
-            "marion",
-            "melatonine",
-            "muff",
-            "nature Trip",
-            "new order",
-            "noa",
-            "nuno",
-            "pooka",
-            "skid row",
-            "syzygy",
-            "the do",
-            "the gathering",
-            "total",
-            "venus",
-            "we insist",
-
-            )
+            "ac/dc", "amps", "amy macdonald", "berenice", "catherine", "dolly", "double", "emma marrone", "emilie simon", "Émilie Simon",
+            "george thorogood", "grease", "halo", "hooverphonic", "hot butter", "hot chocolate", "jean michel jarre", "joyrider", "killer",
+            "lennon murphy", "marion", "muff", "nature Trip", "new order", "noa", "nuno", "pooka", "skid row", "syzygy", "the do",
+            "the gathering", "total", "venus", "we insist"
+        )
 
         // Regex for non-canonical albums: compilations, hits, years, folder fallbacks (§), or generic terms
         val invalidAlbumRegex = Regex("best|collection|anthology|essential|ultimate|greatest|hits|§|single|singles|^\\d+$", RegexOption.IGNORE_CASE)
@@ -1206,45 +1129,89 @@ class LocalMediaScanner(val context: Context, scannerImpl: ScannerImpl) {
         val jobs: List<Deferred<Unit>> = allLocal.map { element ->
             CoroutineScope(lmScannerCoroutine).async {
                 semaphore.withPermit {
-                    val artistName = element.name.trim()
-
-                    // Clean name for debug list check (handles non-breaking spaces and casing)
-                    val cleanNameForDebug = artistName.lowercase().replace("\u00A0", " ").trim()
+                    val originalArtistName = element.name.trim()
+                    val cleanNameForDebug = originalArtistName.lowercase().replace("\u00A0", " ").trim()
                     val shouldLog = debugArtists.contains(cleanNameForDebug)
 
                     val isLinkedOnYouTube = !element.isLocal || !element.channelId.isNullOrEmpty()
 
                     if (!isLinkedOnYouTube) {
                         try {
-                            val artistName = element.name.trim()
-                            val normalizedLocalName = artistName.normalizeForMatching()
+                            val lowercaseName = originalArtistName.lowercase()
+                            var targetLinkingName = originalArtistName
+                            var explicitId: String? = null
 
-                            // --- NEW LOGIC: Check for existing Liked/Bookmarked artist first ---
-                            // We look for a non-local artist with the same name that is already liked.
-                            val existingLikedArtist = withContext(Dispatchers.IO) {
-                                database.allArtistsRaw().firstOrNull {
-                                    it.name.normalizeForMatching() == normalizedLocalName &&
-                                            !it.isLocal &&
-                                            it.bookmarkedAt != null
+                            // 1. Check NoLink and CustomLink lists (Enhanced matching)
+                            if (sensitivity == ArtistLinkingSensitivity.COMPLEX) {
+                                if (lowercaseName in nolinkArtists) {
+                                    Log.i("ArtistLink", "[$originalArtistName] Artist is in Nolink list. Skipping linking.")
+                                    withContext(Dispatchers.Main) {
+                                        scannerProgressProbe.value++
+                                        if (scannerProgressProbe.value % mod == 0) scannerProgressCurrent.value = scannerProgressProbe.value
+                                    }
+                                    return@withPermit
+                                }
+
+                                customLinkArtists[lowercaseName]?.let { link ->
+                                    if (link.startsWith("UC") || link.startsWith("FEmusic_library_privately_owned_artist")) {
+                                        explicitId = link
+                                        Log.i("ArtistLink", "[$originalArtistName] Customlink found with ID: $explicitId")
+                                    } else {
+                                        targetLinkingName = link
+                                        Log.i("ArtistLink", "[$originalArtistName] Customlink found with name: $targetLinkingName")
+                                    }
                                 }
                             }
 
-                            if (existingLikedArtist != null) {
-                                Log.i("ArtistLink", "[$artistName] Match found in Liked Artists (Normalized)! Linking to ${existingLikedArtist.id}")
-                                swapArtists(element, existingLikedArtist, database)
+                            // 2. Handle explicit ID linking
+                            if (explicitId != null) {
+                                val ytArtistPage = YouTube.artist(explicitId!!).getOrNull()
+                                if (ytArtistPage != null) {
+                                    val match = ytArtistPage.artist
+                                    Log.w("ArtistLink", "[$originalArtistName] [SUCCESS] Linked via explicit ID: $explicitId")
+                                    val existingYtArtist = database.artist(match.id).firstOrNull()
+                                    val finalYtArtist = existingYtArtist?.artist ?: ArtistEntity(
+                                        id = match.id,
+                                        name = match.title,
+                                        thumbnailUrl = match.thumbnail,
+                                        channelId = match.channelId
+                                    )
+                                    if (existingYtArtist == null) database.insert(finalYtArtist)
+                                    swapArtists(element, finalYtArtist, database)
 
-                                // Update UI progress and move to next artist
-                                withContext(Dispatchers.Main) {
-                                    scannerProgressProbe.value++
-                                    if (scannerProgressProbe.value % mod == 0) scannerProgressCurrent.value = scannerProgressProbe.value
+                                    withContext(Dispatchers.Main) {
+                                        scannerProgressProbe.value++
+                                        if (scannerProgressProbe.value % mod == 0) scannerProgressCurrent.value = scannerProgressProbe.value
+                                    }
+                                    return@withPermit
+                                } else {
+                                    Log.e("ArtistLink", "[$originalArtistName] Failed to fetch artist by explicit ID: $explicitId")
                                 }
-                                return@withPermit
                             }
-                            // --- END NEW LOGIC ---
 
-                            // Proceed with YouTube search if no liked artist match was found
-                            val searchResult = YouTube.search(artistName, YouTube.SearchFilter.FILTER_ARTIST).getOrNull()
-                            val normalizedArtistQuery = artistName.normalizeForMatching()
+                            val normalizedTargetName = targetLinkingName.normalizeForMatching()
+
+                            // 3. Check for existing Liked/Bookmarked artist first
+                            if (sensitivity == ArtistLinkingSensitivity.COMPLEX) {
+                                val existingLikedArtist = likedArtists.firstOrNull {
+                                    it.name.normalizeForMatching() == normalizedTargetName
+                                }
+
+                                if (existingLikedArtist != null) {
+                                    Log.i("ArtistLink", "[$originalArtistName] Match found in Liked Artists (Normalized)! Linking to ${existingLikedArtist.id}")
+                                    swapArtists(element, existingLikedArtist, database)
+
+                                    withContext(Dispatchers.Main) {
+                                        scannerProgressProbe.value++
+                                        if (scannerProgressProbe.value % mod == 0) scannerProgressCurrent.value = scannerProgressProbe.value
+                                    }
+                                    return@withPermit
+                                }
+                            }
+
+                            // Proceed with YouTube search
+                            val searchResult = YouTube.search(targetLinkingName, YouTube.SearchFilter.FILTER_ARTIST).getOrNull()
+                            val normalizedArtistQuery = targetLinkingName.normalizeForMatching()
 
                             val allCandidates = searchResult?.items?.filterIsInstance<ArtistItem>()?.filter {
                                 it.title.normalizeForMatching() == normalizedArtistQuery
@@ -1252,7 +1219,6 @@ class LocalMediaScanner(val context: Context, scannerImpl: ScannerImpl) {
 
                             if (allCandidates.isNotEmpty()) {
                                 // PRE-FILTER: Identify which candidates are actually viable based on subscribers
-                                // Rule: If at least one candidate has >= 100 subscribers, remove all those who don't.
                                 val hasFamousCandidate = allCandidates.any { parseSubscribers(it.subscribers) >= 100 }
                                 val viableCandidates = if (hasFamousCandidate) {
                                     allCandidates.filter { parseSubscribers(it.subscribers) >= 100 }
@@ -1261,17 +1227,15 @@ class LocalMediaScanner(val context: Context, scannerImpl: ScannerImpl) {
                                 }
 
                                 val isUniqueValidMatch = viableCandidates.size == 1
-
                                 var bestMatch: ArtistItem? = null
-                                val validMatches = mutableListOf<Triple<ArtistItem, Long, String>>()
 
                                 if (sensitivity == ArtistLinkingSensitivity.SIMPLE) {
-                                    // --- SIMPLE LINKING: Pick most popular among name matches ---
+                                    // --- SIMPLE LINKING ---
                                     bestMatch = viableCandidates.maxByOrNull { parseSubscribers(it.subscribers) }
-                                    Log.i("ArtistLink", "[$artistName] Simple Linking: Selected '${bestMatch?.title}' (${bestMatch?.id}) based on popularity.")
+                                    Log.i("ArtistLink", "[$originalArtistName] Simple Linking: Selected '${bestMatch?.title}' (${bestMatch?.id}) based on popularity.")
                                 } else {
-                                    // --- COMPLEX LINKING: Refined verification with song/album checks ---
-                                    Log.i("ArtistLink", "------------------------------ ANALYSING LOCAL ARTIST: '$artistName' -------------------------------")
+                                    // --- COMPLEX LINKING ---
+                                    Log.i("ArtistLink", "------------------------------ ANALYSING LOCAL ARTIST: '$originalArtistName' (Complex) -------------------------------")
 
                                     val localSongs = database.artistSongsPreview(element.id, 15).first()
                                     val localAlbumTitles = localSongs.mapNotNull { it.song.albumName }
@@ -1282,148 +1246,137 @@ class LocalMediaScanner(val context: Context, scannerImpl: ScannerImpl) {
                                     val hasCanonicalAlbumsLocally = validCanonicalLocalAlbums.isNotEmpty()
                                     val isSingleSongArtist = localSongs.size == 1
 
-                                    if (shouldLog) Log.i("ArtistLink", "    [$artistName] [LOCAL CONTEXT] Songs: ${localSongs.map { it.song.title }}")
-                                    if (shouldLog) Log.i("ArtistLink", "    [$artistName] [LOCAL CONTEXT] Albums: $localAlbumTitles (Canonical Count: ${validCanonicalLocalAlbums.size})")
+                                    if (shouldLog) Log.i("ArtistLink", "    [$originalArtistName] [LOCAL CONTEXT] Songs: ${localSongs.map { it.song.title }}")
+                                    if (shouldLog) Log.i("ArtistLink", "    [$originalArtistName] [LOCAL CONTEXT] Albums: $localAlbumTitles (Canonical Count: ${validCanonicalLocalAlbums.size})")
 
-                                    // Only process the candidates that passed our initial viable filter
+                                    val validMatches = mutableListOf<ArtistItem>()
+
                                     for (candidate in viableCandidates) {
                                         val subsString = candidate.subscribers ?: "0 subscribers"
                                         val subCount = parseSubscribers(subsString)
 
-                                        if (shouldLog) Log.i("ArtistLink", "    [$artistName] > CHECKING CANDIDATE: '${candidate.title}' (Audience: $subsString, ID: ${candidate.id})")
+                                        if (shouldLog) Log.i("ArtistLink", "    [$originalArtistName] > CHECKING CANDIDATE: '${candidate.title}' (Audience: $subsString, ID: ${candidate.id})")
 
                                         val ytArtistPage = YouTube.artist(candidate.id).getOrNull() ?: continue
                                         val ytItems = ytArtistPage.sections.flatMap { it.items }
 
-                                        // 2. Prepare Online Context
+                                        // Prepare Online Context
                                         val ytSongTitlesNorm = ytItems.filterIsInstance<SongItem>().map { it.title.cleanTitle() }.toSet()
                                         val ytAlbumTitlesNorm = ytItems.filterIsInstance<AlbumItem>().map { it.title.cleanTitle() }.toSet()
 
-                                        if (shouldLog) Log.i("ArtistLink", "    [$artistName]   [YT PAGE DATA] Songs: ${ytSongTitlesNorm.toList()}")
-                                        if (shouldLog) Log.i("ArtistLink", "    [$artistName]   [YT PAGE DATA] Albums: ${ytAlbumTitlesNorm.toList()}")
+                                        if (shouldLog) Log.i("ArtistLink", "    [$originalArtistName]   [YT PAGE DATA] Songs: ${ytSongTitlesNorm.toList()}")
+                                        if (shouldLog) Log.i("ArtistLink", "    [$originalArtistName]   [YT PAGE DATA] Albums: ${ytAlbumTitlesNorm.toList()}")
 
-                                        // 3. Compare Items (Standard Page Check)
+                                        // Compare Items
                                         val matchedLocalSongs = mutableSetOf<String>()
                                         localSongs.forEach { localSong ->
                                             val localClean = localSong.song.title.cleanTitle()
-                                            // Rule: Online song title contains local song title
-                                            if (ytSongTitlesNorm.any { onlineClean -> onlineClean.contains(localClean) }) {
-                                                if (shouldLog) Log.i("ArtistLink", "    [$artistName]   - SONG MATCH (Page): -> [FOUND] '${localSong.song.title}'")
+                                            if (ytSongTitlesNorm.any { it.contains(localClean) }) {
+                                                if (shouldLog) Log.i("ArtistLink", "    [$originalArtistName]   - SONG MATCH (Page): -> [FOUND] '${localSong.song.title}'")
                                                 matchedLocalSongs.add(localSong.song.title)
                                             } else {
-                                                if (shouldLog) Log.e("ArtistLink", "    [$artistName]   - SONG MATCH (Page): -> [NOT FOUND] '${localSong.song.title}'")
+                                                if (shouldLog) Log.e("ArtistLink", "    [$originalArtistName]   - SONG MATCH (Page): -> [NOT FOUND] '${localSong.song.title}'")
                                             }
                                         }
 
                                         val matchedLocalAlbums = mutableSetOf<String>()
                                         localAlbumTitles.forEach { localAlbum ->
                                             val localClean = localAlbum.cleanTitle()
-                                            // Rule 1: Local album string contains online album string
-                                            val isAlbumMatch = ytAlbumTitlesNorm.any { onlineClean -> localClean.contains(onlineClean) }
-                                            // Rule 2: Online song title contains local album string (case where album tag = song title)
-                                            val isSongAsAlbumMatch = ytSongTitlesNorm.any { onlineClean -> onlineClean.contains(localClean) }
+                                            val isAlbumMatch = ytAlbumTitlesNorm.any { localClean.contains(it) }
+                                            val isSongAsAlbumMatch = ytSongTitlesNorm.any { it.contains(localClean) }
 
                                             if (isAlbumMatch || isSongAsAlbumMatch) {
-                                                if (shouldLog) Log.i("ArtistLink", "    [$artistName]   - ALBUM MATCH (Page): -> [FOUND] '$localAlbum'")
+                                                if (shouldLog) Log.i("ArtistLink", "    [$originalArtistName]   - ALBUM MATCH (Page): -> [FOUND] '$localAlbum'")
                                                 matchedLocalAlbums.add(localAlbum)
                                             } else {
-                                                if (shouldLog) Log.e("ArtistLink", "    [$artistName]   - ALBUM MATCH (Page): -> [NOT FOUND] '$localAlbum'")
+                                                if (shouldLog) Log.e("ArtistLink", "    [$originalArtistName]   - ALBUM MATCH (Page): -> [NOT FOUND] '$localAlbum'")
                                             }
                                         }
 
-                                        // 4. Inverse Search (Trigger if current evidence is insufficient or rule is failing)
+                                        // Inverse Search
                                         if (!(matchedLocalAlbums.isNotEmpty() && matchedLocalSongs.size >= 1) && matchedLocalSongs.size < 2) {
-                                            if (shouldLog) Log.w("ArtistLink", "    [$artistName]   ? Matches insufficient. Searching YouTube direct for matches...")
+                                            if (shouldLog) Log.w("ArtistLink", "    [$originalArtistName]   ? Matches insufficient. Searching YouTube direct...")
 
-                                            // Parallel search for songs
                                             val songSearchJobs = localSongs.take(5).filter { it.song.title !in matchedLocalSongs }.map { localSong ->
                                                 async {
-                                                    val res = YouTube.search("$artistName ${localSong.song.title}", YouTube.SearchFilter.FILTER_SONG).getOrNull()
-                                                    val isMatch = res?.items?.filterIsInstance<SongItem>()?.any { it.artists.any { a -> a.id == candidate.id } } == true
+                                                    val res = YouTube.search("$targetLinkingName ${localSong.song.title}", YouTube.SearchFilter.FILTER_SONG).getOrThrow()
+                                                    val isMatch = res.items.filterIsInstance<SongItem>().any { it.artists.any { a -> a.id == candidate.id } }
                                                     if (isMatch) {
-                                                        if (shouldLog) Log.i("ArtistLink", "    [$artistName]   - SONG MATCH (Search): -> [FOUND via Search] '${localSong.song.title}'")
+                                                        if (shouldLog) Log.i("ArtistLink", "    [$originalArtistName]   - SONG MATCH (Search): -> [FOUND via Search] '${localSong.song.title}'")
                                                         localSong.song.title
                                                     } else {
-                                                        if (shouldLog) Log.e("ArtistLink", "    [$artistName]   - SONG MATCH (Search): -> [NOT FOUND via Search] '${localSong.song.title}'")
+                                                        if (shouldLog) Log.e("ArtistLink", "    [$originalArtistName]   - SONG MATCH (Search): -> [NOT FOUND via Search] '${localSong.song.title}'")
                                                         null
                                                     }
                                                 }
                                             }
 
-                                            // Parallel search for albums
                                             val albumSearchJobs = if (matchedLocalAlbums.isEmpty()) {
                                                 localAlbumTitles.take(2).map { localAlbum ->
                                                     async {
-                                                        val query = "$artistName $localAlbum"
-                                                        // Search as Album
-                                                        val albMatch = YouTube.search(query, YouTube.SearchFilter.FILTER_ALBUM).getOrNull()
-                                                            ?.items?.filterIsInstance<AlbumItem>()?.any { it.artists?.any { a -> a.id == candidate.id } == true }
-                                                        if (albMatch == true) {
-                                                            if (shouldLog) Log.i("ArtistLink", "    [$artistName]   - ALBUM MATCH (Search ALBUM): -> [FOUND via Search] '$localAlbum'")
+                                                        val query = "$targetLinkingName $localAlbum"
+                                                        val albMatch = YouTube.search(query, YouTube.SearchFilter.FILTER_ALBUM).getOrThrow()
+                                                            .items.filterIsInstance<AlbumItem>().any { it.artists?.any { a -> a.id == candidate.id } == true }
+                                                        if (albMatch) {
+                                                            if (shouldLog) Log.i("ArtistLink", "    [$originalArtistName]   - ALBUM MATCH (Search ALBUM): -> [FOUND via Search] '$localAlbum'")
                                                             return@async localAlbum
                                                         }
-                                                        // Search as Song
-                                                        val songMatch = YouTube.search(query, YouTube.SearchFilter.FILTER_SONG).getOrNull()
-                                                            ?.items?.filterIsInstance<SongItem>()?.any { it.artists.any { a -> a.id == candidate.id } }
-                                                        if (songMatch == true) {
-                                                            if (shouldLog) Log.i("ArtistLink", "    [$artistName]   - ALBUM MATCH (Search SONG): -> [FOUND via Search] '$localAlbum'")
+                                                        val songMatch = YouTube.search(query, YouTube.SearchFilter.FILTER_SONG).getOrThrow()
+                                                            .items.filterIsInstance<SongItem>().any { it.artists.any { a -> a.id == candidate.id } }
+                                                        if (songMatch) {
+                                                            if (shouldLog) Log.i("ArtistLink", "    [$originalArtistName]   - ALBUM MATCH (Search SONG): -> [FOUND via Search] '$localAlbum'")
                                                             localAlbum
                                                         } else {
-                                                            if (shouldLog) Log.e("ArtistLink", "    [$artistName]   - ALBUM MATCH (Search): -> [NOT FOUND via Search] '$localAlbum'")
+                                                            if (shouldLog) Log.e("ArtistLink", "    [$originalArtistName]   - ALBUM MATCH (Search): -> [NOT FOUND via Search] '$localAlbum'")
                                                             null
                                                         }
                                                     }
                                                 }
                                             } else emptyList()
 
-                                            songSearchJobs.awaitAll().filterNotNull().forEach { matchedLocalSongs.add(it) }
-                                            albumSearchJobs.awaitAll().filterNotNull().forEach { matchedLocalAlbums.add(it) }
+                                            matchedLocalSongs.addAll(songSearchJobs.awaitAll().filterNotNull())
+                                            matchedLocalAlbums.addAll(albumSearchJobs.awaitAll().filterNotNull())
                                         }
 
                                         val finalSongMatchCount = matchedLocalSongs.size
                                         val finalHasAlbumMatch = matchedLocalAlbums.isNotEmpty()
 
-                                        // Apply rules
                                         val passesAlbumEnforcement = isUniqueValidMatch || isSingleSongArtist || !hasCanonicalAlbumsLocally || finalHasAlbumMatch
-
-                                        Log.i("ArtistLink", "    [$artistName]   [SUMMARY] Candidate '${candidate.title}': Songs=$finalSongMatchCount, AlbumMatch=$finalHasAlbumMatch, AlbumEnforced=$hasCanonicalAlbumsLocally, UniqueCandidate=$isUniqueValidMatch")
-
                                         val isStandardMatch = (finalHasAlbumMatch && finalSongMatchCount >= 1) || finalSongMatchCount >= 2
                                         val isSingleSongMatch = isSingleSongArtist && finalSongMatchCount == 1
                                         val isHighConfidenceSongMatch = finalSongMatchCount >= 4
 
                                         if (isHighConfidenceSongMatch || (passesAlbumEnforcement && (isStandardMatch || isSingleSongMatch))) {
-                                            validMatches.add(Triple(candidate, subCount, subsString))
-                                            if (shouldLog) {
-                                                val reason = if (isHighConfidenceSongMatch) "High confidence song match" else "Standard criteria"
-                                                if (shouldLog) Log.i("ArtistLink", "    [$artistName]   >>> Candidate VALIDATED ($reason).")
-                                            }
-                                            break  // stop evaluating other candidates once a strong match is found
+                                            validMatches.add(candidate)
+                                            if (shouldLog) Log.i("ArtistLink", "    [$originalArtistName]   >>> Candidate VALIDATED.")
+                                            break
                                         } else {
-                                            val reason = if (!passesAlbumEnforcement) "Failed album enforcement" else "Insufficient matches"
-                                            if (shouldLog) Log.e("ArtistLink", "    [$artistName]   >>> Candidate REJECTED ($reason).")
+                                            if (shouldLog) Log.e("ArtistLink", "    [$originalArtistName]   >>> Candidate REJECTED.")
                                         }
                                     }
-
-                                    bestMatch = validMatches.firstOrNull()?.first
+                                    bestMatch = validMatches.firstOrNull()
                                 }
 
                                 if (bestMatch != null) {
-                                    Log.w("ArtistLink", "[$artistName] [SUCCESS] Linked ! .")
+                                    Log.w("ArtistLink", "[$originalArtistName] [SUCCESS] Linked!")
                                     val existingYtArtist = database.artist(bestMatch.id).firstOrNull()
-                                    val finalYtArtist = existingYtArtist?.artist ?: ArtistEntity(id = bestMatch.id, name = bestMatch.title, thumbnailUrl = bestMatch.thumbnail, channelId = bestMatch.channelId)
+                                    val finalYtArtist = existingYtArtist?.artist ?: ArtistEntity(
+                                        id = bestMatch.id,
+                                        name = bestMatch.title,
+                                        thumbnailUrl = bestMatch.thumbnail,
+                                        channelId = bestMatch.channelId
+                                    )
                                     if (existingYtArtist == null) database.insert(finalYtArtist)
                                     swapArtists(element, finalYtArtist, database)
                                 } else {
-                                    Log.e("ArtistLink", "[$artistName] [RESULT] No winner for '$artistName'.")
+                                    Log.e("ArtistLink", "[$originalArtistName] [RESULT] No winner for '$originalArtistName'.")
                                 }
                             } else {
-                                Log.e("ArtistLink", "[$artistName] [RESULT] No name-matched candidates found on YouTube for '$artistName'.")
+                                Log.e("ArtistLink", "[$originalArtistName] [RESULT] No candidates found for '$originalArtistName'.")
                             }
                         } catch (e: Exception) { reportException(e) }
                     }
 
-                    // Update UI progress
                     withContext(Dispatchers.Main) {
                         scannerProgressProbe.value++
                         if (scannerProgressProbe.value % mod == 0) {

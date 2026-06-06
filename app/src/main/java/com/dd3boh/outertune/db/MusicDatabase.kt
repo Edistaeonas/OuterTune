@@ -20,10 +20,13 @@ import com.dd3boh.outertune.db.MusicDatabase.Companion.MUSIC_DATABASE_VERSION
 import com.dd3boh.outertune.db.entities.AlbumArtistMap
 import com.dd3boh.outertune.db.entities.AlbumEntity
 import com.dd3boh.outertune.db.entities.ArtistEntity
+import com.dd3boh.outertune.db.entities.BlacklistedArtistEntity
+import com.dd3boh.outertune.db.entities.CustomLinkArtistEntity
 import com.dd3boh.outertune.db.entities.Event
 import com.dd3boh.outertune.db.entities.FormatEntity
 import com.dd3boh.outertune.db.entities.GenreEntity
 import com.dd3boh.outertune.db.entities.LyricsEntity
+import com.dd3boh.outertune.db.entities.NoLinkArtistEntity
 import com.dd3boh.outertune.db.entities.PlayCountEntity
 import com.dd3boh.outertune.db.entities.PlaylistEntity
 import com.dd3boh.outertune.db.entities.PlaylistEntity.Companion.generatePlaylistId
@@ -75,7 +78,7 @@ class MusicDatabase(
     fun close() = delegate.close()
 
     companion object {
-        const val MUSIC_DATABASE_VERSION = 22 // 2026.04.03
+        const val MUSIC_DATABASE_VERSION = 24 // 2026.04.03
     }
 }
 
@@ -99,7 +102,10 @@ class MusicDatabase(
         PlayCountEntity::class,
         Event::class,
         RelatedSongMap::class,
-        RecentActivityEntity::class
+        RecentActivityEntity::class,
+        BlacklistedArtistEntity::class,
+        NoLinkArtistEntity::class,
+        CustomLinkArtistEntity::class
     ],
     views = [
         SortedSongArtistMap::class,
@@ -125,7 +131,9 @@ class MusicDatabase(
         AutoMigration(from = 18, to = 19), // Recent activity
         AutoMigration(from = 19, to = 20, spec = Migration19To20::class), // Db optimization, remove totalplaytime, local media fields
         AutoMigration(from = 20, to = 21, spec = Migration20To21::class), // 29.03.2026
-        AutoMigration(from = 21, to = 22) // 03.04.2026
+        AutoMigration(from = 21, to = 22), // 03.04.2026
+        AutoMigration(from = 22, to = 23),
+        AutoMigration(from = 23, to = 24)
     ]
 )
 @TypeConverters(Converters::class)

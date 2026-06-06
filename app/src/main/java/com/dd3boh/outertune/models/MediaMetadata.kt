@@ -21,7 +21,7 @@ data class MediaMetadata(
     val trackNumber: Int? = null,
     val discNumber: Int? = null,
     val album: Album? = null,
-    val genre: List<Genre>?,
+    val genre: List<Genre>? = null,
     val year: Int? = null,
     private val date: LocalDateTime? = null, // ID3 tag property
     private val dateModified: LocalDateTime? = null, // file property

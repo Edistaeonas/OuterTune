@@ -78,6 +78,12 @@ val GlobalRadioUseOnlineKey = booleanPreferencesKey("globalRadioUseOnline")
 val GlobalRadioUseLocalKey = booleanPreferencesKey("globalRadioUseLocal")
 val GlobalRadioStrictFavoritesKey = booleanPreferencesKey("globalRadioStrictFavorites")
 val GlobalRadioArtistRepeatThresholdKey = intPreferencesKey("globalRadioArtistRepeatThreshold")
+val RadioDJEnabledKey = booleanPreferencesKey("radioDJEnabled")
+val RadioDJStyleKey = stringPreferencesKey("radioDJStyle")
+val RadioDJGenderKey = stringPreferencesKey("radioDJGender")
+val RadioDJLanguageKey = stringPreferencesKey("radioDJLanguage")
+
+val AiApiKeyKey = stringPreferencesKey("aiApiKey")
 
 val PlayerVolumeKey = floatPreferencesKey("playerVolume")
 val RepeatModeKey = intPreferencesKey("repeatMode")

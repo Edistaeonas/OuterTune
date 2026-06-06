@@ -12,6 +12,9 @@ import androidx.room.Upsert
 import androidx.sqlite.db.SupportSQLiteQuery
 import com.dd3boh.outertune.db.daos.AlbumsDao
 import com.dd3boh.outertune.db.daos.ArtistsDao
+import com.dd3boh.outertune.db.daos.BlacklistedArtistsDao
+import com.dd3boh.outertune.db.daos.CustomLinkArtistsDao
+import com.dd3boh.outertune.db.daos.NoLinkArtistsDao
 import com.dd3boh.outertune.db.daos.PlaylistsDao
 import com.dd3boh.outertune.db.daos.QueueDao
 import com.dd3boh.outertune.db.daos.SongsDao
@@ -54,7 +57,7 @@ import kotlin.text.lowercase
 data class SongIdentity(val artistName: String?, val title: String)
 
 @Dao
-interface DatabaseDao : SongsDao, AlbumsDao, ArtistsDao, PlaylistsDao, QueueDao {
+interface DatabaseDao : SongsDao, AlbumsDao, ArtistsDao, PlaylistsDao, QueueDao, BlacklistedArtistsDao, NoLinkArtistsDao, CustomLinkArtistsDao {
 
     @Transaction
     @Query("""

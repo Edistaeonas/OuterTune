@@ -11,6 +11,7 @@ plugins {
     kotlin("android")
     alias(libs.plugins.hilt)
     alias(libs.plugins.kotlin.ksp)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.aboutlibraries)
 }
@@ -29,8 +30,8 @@ android {
         applicationId = "com.dd3boh.outertune"
         minSdk = 24
         targetSdk = 36
-        versionCode = 70
-        versionName = "0.12.6"
+        versionCode = 73
+        versionName = "0.14.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         externalNativeBuild {
             cmake {
@@ -258,6 +259,8 @@ dependencies {
     coreLibraryDesugaring(libs.desugaring)
 
     implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.okhttp)
+    implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.json)
 
     // modules

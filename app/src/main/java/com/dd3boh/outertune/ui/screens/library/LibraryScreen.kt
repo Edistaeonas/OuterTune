@@ -22,9 +22,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.List
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -235,6 +237,18 @@ fun LibraryScreen(
                                 || (filter == LibraryFilter.SONGS && (isSyncingRemoteSongs || isSyncingRemoteLikedSongs))
                     }
                 )
+
+                IconButton(
+                    onClick = {
+                        navController.navigate("ai_playlist")
+                    },
+                    modifier = Modifier.padding(end = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.AutoAwesome,
+                        contentDescription = stringResource(R.string.ai_settings_title)
+                    )
+                }
 
                 if (filter != LibraryFilter.SONGS && filter != LibraryFilter.FOLDERS) {
                     IconButton(

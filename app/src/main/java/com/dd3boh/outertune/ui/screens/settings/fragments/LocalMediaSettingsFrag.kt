@@ -743,7 +743,7 @@ fun ColumnScope.LocalScannerExtraFrag() {
 
     val (artistLinkingSensitivity, onArtistLinkingSensitivityChange) = rememberEnumPreference(
         key = ArtistLinkingSensitivityKey,
-        defaultValue = ArtistLinkingSensitivity.SIMPLE
+        defaultValue = ArtistLinkingSensitivity.COMPLEX
     )
 
 // Artist linking sensitivity

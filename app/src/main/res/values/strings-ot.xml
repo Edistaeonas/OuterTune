@@ -13,7 +13,7 @@ while also allowing users to translate our app as well. New, specific strings to
 
     <!-- Home -->
     <string name="recent_activity">Recent activity</string>
-    <string name="global_artist_radio">Global Artist Radio v12.6</string>
+    <string name="global_artist_radio">Global Artist Radio v%s</string>
     <string name="no_local_artists_for_radio">No local artists found to start a radio.</string>
     <string name="global_artist_radio_description">Your ultimate random compilation uniting your library artists with your local media, with some discoveries you might like!</string>
     <string name="local_songs_radio">Local Songs Radio</string>
@@ -83,6 +83,35 @@ while also allowing users to translate our app as well. New, specific strings to
     <!-- Settings -->
     <string name="prefs_advanced">Advanced</string>
     <string name="settings_debug">Debug</string>
+
+    <string name="blacklisted_artists">Excluded artists from Radio</string>
+    <string name="blacklisted_artists_description">Blacklist artists to prevent their songs from appearing in radios</string>
+    <string name="add_blacklisted_artist">Add artist to blacklist</string>
+    <string name="artist_name_placeholder">Artist name</string>
+    <string name="export_blacklist">Export Blacklist</string>
+    <string name="import_blacklist">Import Blacklist</string>
+    <string name="blacklist_exported">Blacklist exported</string>
+    <string name="blacklist_imported">Blacklist imported</string>
+
+    <string name="nolink_artists">Nolink artists</string>
+    <string name="nolink_artists_description">Artists that will never be linked to YouTube</string>
+    <string name="add_nolink_artist">Add artist to Nolink list</string>
+    <string name="export_nolink">Export Nolink list</string>
+    <string name="import_nolink">Import Nolink list</string>
+    <string name="nolink_exported">Nolink list exported</string>
+    <string name="nolink_imported">Nolink list imported</string>
+
+    <string name="customlink_artists">Customlink artists</string>
+    <string name="customlink_artists_description">Artists linked with a specific name or ID</string>
+    <string name="add_customlink_artist">Add artist to Customlink list</string>
+    <string name="original_name_placeholder">Original name</string>
+    <string name="custom_link_placeholder">Target name or ID</string>
+    <string name="export_customlink">Export Customlink list</string>
+    <string name="import_customlink">Import Customlink list</string>
+    <string name="customlink_exported">Customlink list exported</string>
+    <string name="customlink_imported">Customlink list imported</string>
+
+    <string name="copy_artist_id">Copy artist ID: %s</string>
 
     <string name="grp_account_sync">Account and sync</string>
     <string name="grp_audio">Audio</string>
@@ -216,6 +245,15 @@ while also allowing users to translate our app as well. New, specific strings to
     <string name="global_radio_artist_separation_gap_desc">Number of songs of other artists before having two songs of the same artists in the queue. Note: this setting is ignored if your total number of liked artist is less than this setting value.</string>
     <string name="from_radio">from \"%1$s\" radio</string>
 
+    <string name="radio_dj_enabled">Radio DJ</string>
+    <string name="radio_dj_enabled_desc">AI generated voice announcing next song</string>
+    <string name="radio_dj_style">DJ voice style</string>
+    <string name="radio_dj_language">DJ voice language</string>
+    <string name="radio_dj_install_tts">Install/Manage TTS voices</string>
+    <string name="radio_dj_test">Test DJ voice</string>
+    <string name="random">Random</string>
+    <string name="radio_dj_test_sentence">This is a test of the OuterTune Radio DJ voice.</string>
+
     <!--Lyrics settings -->
     <string name="lyrics_font_Size">Font size</string>
     <string name="lyrics_karaoke_title">Karaoke style lyrics.</string>
@@ -280,6 +318,39 @@ while also allowing users to translate our app as well. New, specific strings to
     <string name="scanner_ytm_link_fail">YouTube artist linking job failed</string>
     <string name="scanner_ytm_link_start">Starting YouTube artist linking. This may take a while…</string>
     <string name="scanner_ytm_link_success">YouTube artist linking job complete</string>
+
+    <!-- AI settings -->
+    <string name="ai_settings_title">AI Playlist Generator</string>
+    <string name="ai_api_key_title">Gemini API Key</string>
+    <string name="ai_api_key_description">Enter your Google Gemini API key to use AI features.</string>
+    <string name="ai_get_api_key_title">Get a free API key</string>
+    <string name="ai_get_api_key_description">Visit Google AI Studio to generate your own free API key.</string>
+    <string name="ai_playlist_generator">AI Playlist generator</string>
+    <string name="ai_playlist_generator_desc">Enter your description and use Gemini to generate a playlist.</string>
+    <string name="ai_api_key_required_title">Gemini API Key Required</string>
+    <string name="ai_api_key_required_desc">A Gemini API key is required, go to your user settings to provide one</string>
+    <string name="ai_playlist_prompt_label">Describe the playlist you want to generate…</string>
+    <string name="ai_playlist_prompt_placeholder">Example: 90s Brazilian Rock with heavy synthesizers and a melancholic mood</string>
+    <string name="ai_playlist_generate_btn">Generate Suggested Tracks</string>
+    <string name="ai_playlist_generating">AI is curating your tracks…</string>
+    <string name="ai_playlist_suggestions_title">Suggestions</string>
+    <string name="ai_playlist_resolve_btn">Resolve on YTM</string>
+    <string name="ai_playlist_resolving">Matching track %1$d of %2$d…</string>
+    <string name="ai_playlist_final_title">Final Playlist</string>
+    <string name="ai_playlist_error_no_tracks">No tracks could be resolved on YouTube Music</string>
+    <string name="ai_playlist_try_again">Try Again</string>
+    <string name="ai_playlist_retry">Retry</string>
+    <string name="ai_playlist_play_all">Play All</string>
+    <string name="ai_playlist_add_existing">Add to existing playlist</string>
+    <string name="ai_playlist_title">AI Playlist</string>
+    <string name="ai_playlist_generate_ai">Generate AI Playlist</string>
+    <string name="ai_playlist_song_count">Number of songs</string>
+    <string name="ai_playlist_not_logged_in_title">Not Logged In</string>
+    <string name="ai_playlist_not_logged_in_desc">You are not logged into a YouTube account. Would you like to save this as a local playlist instead?</string>
+    <string name="ai_playlist_save_local">Save Locally</string>
+    <string name="ai_playlist_added_to_existing">%1$d songs added to %2$s</string>
+    <string name="ai_playlist_added_to_multiple">%1$d songs added to %2$d playlists</string>
+    <string name="add">Add</string>
 
     <plurals name="scanner_ytm_link_progress">
         <item quantity="one">%1$d / %2$d unique artist processed</item>
@@ -447,6 +518,7 @@ while also allowing users to translate our app as well. New, specific strings to
     <string name="action_next">Next</string>
     <string name="action_skip">Skip</string>
     <string name="action_cancel">Cancel</string>
+    <string name="action_save">Save</string>
     <string name="info">Information</string>
     <plurals name="second">
         <item quantity="one">%d second</item>

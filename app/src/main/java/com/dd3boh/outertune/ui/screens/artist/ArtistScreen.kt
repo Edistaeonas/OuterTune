@@ -9,7 +9,11 @@
 
 package com.dd3boh.outertune.ui.screens.artist
 
+import android.content.ClipData
 import android.content.Intent
+import android.widget.Toast
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,6 +30,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -154,6 +159,7 @@ fun ArtistScreen(
 ) {
     val context = LocalContext.current
     val database = LocalDatabase.current
+    val clipboardManager = LocalClipboard.current
     val density = LocalDensity.current
     val menuState = LocalMenuState.current
     val coroutineScope = rememberCoroutineScope()
@@ -340,6 +346,29 @@ fun ArtistScreen(
                                 )
                                 Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                                 Text(stringResource(R.string.unlink_artist_button_label))
+                            }
+                        }
+
+                        // Case 3: Show "Copy Artist ID" button if linked or from YouTube
+                        val artistIdToCopy = artistPage?.artist?.id ?: currentArtistEntity.id.takeIf { currentArtistEntity.isYouTubeArtist }
+                        if (artistIdToCopy != null) {
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    val clipData = ClipData.newPlainText("Artist ID", artistIdToCopy)
+                                    clipboardManager.nativeClipboard.setPrimaryClip(clipData)
+                                    Toast.makeText(context, "Artist ID copied", Toast.LENGTH_SHORT).show()
+                                },
+                                contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.ContentCopy,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(ButtonDefaults.IconSize)
+                                )
+                                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                                Text(stringResource(R.string.copy_artist_id, artistIdToCopy))
                             }
                         }
                     }

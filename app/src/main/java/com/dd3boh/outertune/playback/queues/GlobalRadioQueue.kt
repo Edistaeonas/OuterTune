@@ -136,7 +136,19 @@ class GlobalRadioQueue(
 
         val allSongs = deferredResults.awaitAll().flatten()
 
-        Log.i(TAG, "--- Deduplication and History Check ---")
+        Log.i(TAG, "--- Deduplication and Blacklist and History Check ---")
+
+        val blacklist = withContext(Dispatchers.IO) {
+            db.getAllBlacklistedArtistsSync().map { it.name.lowercase() }.toSet()
+        }
+
+        val filteredByBlacklist = allSongs.filterNot { song ->
+            val isBlacklisted = song.artists.any { it.name.lowercase() in blacklist }
+            if (isBlacklisted) {
+                Log.i(TAG, "Discarding song by blacklisted artist: ${song.title} by ${song.artists.joinToString { it.name }}")
+            }
+            isBlacklisted
+        }
 
         // --- NEW: Persistent History Filter (Title + Artist Gap with Normalization) ---
         val recentPersistentIdentities = withContext(Dispatchers.IO) {
@@ -147,7 +159,7 @@ class GlobalRadioQueue(
             }.toSet()
         }
 
-        val filteredByPersistentHistory = allSongs.filterNot { song ->
+        val filteredByPersistentHistory = filteredByBlacklist.filterNot { song ->
             val artistName = (song.artists.firstOrNull()?.name ?: "Unknown Artist").lowercase()
             val cleanedTitle = cleanTitle(song.title)
             val key = "$artistName||$cleanedTitle"
@@ -162,6 +174,7 @@ class GlobalRadioQueue(
 
 
         Log.i(TAG, "Total songs from all components (pre-filter): ${allSongs.size}")
+        Log.i(TAG, "Total songs after blacklist filter: ${filteredByBlacklist.size}")
 
         // First, remove internal duplicates from this batch
         val uniqueSongs = filteredByPersistentHistory.distinctBy { (it.artists.firstOrNull()?.name?.lowercase() ?: "") + it.title.lowercase() }

@@ -147,6 +147,7 @@ import com.dd3boh.outertune.ui.menu.BottomSheetMenu
 import com.dd3boh.outertune.ui.menu.MenuState
 import com.dd3boh.outertune.ui.player.BottomSheetPlayer
 import com.dd3boh.outertune.ui.screens.AccountScreen
+import com.dd3boh.outertune.ui.screens.AiPlaylistScreen
 import com.dd3boh.outertune.ui.screens.AlbumScreen
 import com.dd3boh.outertune.ui.screens.BrowseScreen
 import com.dd3boh.outertune.ui.screens.HistoryScreen
@@ -668,6 +669,9 @@ class MainActivity : ComponentActivity() {
                                         }
                                         composable("mood_and_genres") {
                                             MoodAndGenresScreen(navController, scrollBehavior)
+                                        }
+                                        composable("ai_playlist") {
+                                            AiPlaylistScreen(navController, scrollBehavior)
                                         }
                                         composable("account") {
                                             AccountScreen(navController, scrollBehavior)

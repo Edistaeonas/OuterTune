@@ -39,18 +39,23 @@ import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.Casino
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.SdCard
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,11 +69,13 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
+import com.dd3boh.outertune.BuildConfig
 import com.dd3boh.outertune.LocalDatabase
 import com.dd3boh.outertune.LocalMenuState
 import com.dd3boh.outertune.LocalPlayerAwareWindowInsets
 import com.dd3boh.outertune.LocalPlayerConnection
 import com.dd3boh.outertune.R
+import com.dd3boh.outertune.constants.AiApiKeyKey
 import com.dd3boh.outertune.constants.GridThumbnailHeight
 import com.dd3boh.outertune.constants.ListItemHeight
 import com.dd3boh.outertune.constants.ListThumbnailSize
@@ -454,12 +461,78 @@ fun HomeScreen(
                         )
                         Column {
                             Text(
-                                //                                                         edgar
-                                text = stringResource(R.string.global_artist_radio) + "iq",
+                                text = stringResource(R.string.global_artist_radio, BuildConfig.VERSION_NAME),
                                 style = MaterialTheme.typography.titleMedium
                             )
                             Text(
                                 text = stringResource(R.string.global_artist_radio_description),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    NavigationTitle(
+                        title = stringResource(R.string.ai_playlist_title),
+                        modifier = Modifier.animateItem()
+                    )
+                }
+
+                // AI Playlist generator
+                item {
+                    val aiApiKey by rememberPreference(AiApiKeyKey, defaultValue = "")
+                    var showAiDialog by remember { mutableStateOf(false) }
+
+                    if (showAiDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showAiDialog = false },
+                            title = { Text(stringResource(R.string.ai_api_key_required_title)) },
+                            text = { Text(stringResource(R.string.ai_api_key_required_desc)) },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    showAiDialog = false
+                                    navController.navigate("settings/player")
+                                }) {
+                                    Text(stringResource(android.R.string.ok))
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showAiDialog = false }) {
+                                    Text(stringResource(R.string.action_cancel))
+                                }
+                            }
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                            .combinedClickable(
+                                onClick = {
+                                    if (aiApiKey.isEmpty()) {
+                                        showAiDialog = true
+                                    } else {
+                                        navController.navigate("ai_playlist")
+                                    }
+                                }
+                            ),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Psychology,
+                            contentDescription = null,
+                            modifier = Modifier.padding(end = 12.dp)
+                        )
+                        Column {
+                            Text(
+                                text = stringResource(R.string.ai_playlist_generate_ai),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = stringResource(R.string.ai_playlist_generator_desc),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

@@ -1,5 +1,7 @@
 package com.dd3boh.outertune.playback.queues
 
+import android.util.Log
+import com.dd3boh.outertune.App
 import com.dd3boh.outertune.models.MediaMetadata
 import com.dd3boh.outertune.models.toMediaMetadata
 import com.zionhuang.innertube.YouTube
@@ -21,9 +23,22 @@ class YouTubeQueue(
         }
         endpoint = nextResult.endpoint
         continuation = nextResult.continuation
+
+        val blacklist = withContext(IO) {
+            App.instance.database.getAllBlacklistedArtistsSync().map { it.name.lowercase() }.toSet()
+        }
+
+        val filteredItems = nextResult.items.map { it.toMediaMetadata() }.filter { song ->
+            val isBlacklisted = song.artists.any { it.name.lowercase() in blacklist }
+            if (isBlacklisted) {
+                Log.i("YouTubeQueue", "Discarding song by blacklisted artist: ${song.title} by ${song.artists.joinToString { it.name }}")
+            }
+            !isBlacklisted
+        }
+
         return Queue.Status(
             title = nextResult.title,
-            items = nextResult.items.map { it.toMediaMetadata() },
+            items = filteredItems,
             mediaItemIndex = nextResult.currentIndex ?: 0
         )
     }
@@ -38,7 +53,25 @@ class YouTubeQueue(
             endpoint = nextResult.endpoint
         }
         continuation = nextResult?.continuation
-        return nextResult?.items?.map { it.toMediaMetadata() } ?: emptyList()
+
+        val blacklist = withContext(IO) {
+            App.instance.database.getAllBlacklistedArtistsSync().map { it.name.lowercase() }.toSet()
+        }
+
+        val filteredItems = nextResult?.items?.map { it.toMediaMetadata() }?.filter { song ->
+            val isBlacklisted = song.artists.any { it.name.lowercase() in blacklist }
+            if (isBlacklisted) {
+                Log.i("YouTubeQueue", "Discarding song by blacklisted artist: ${song.title} by ${song.artists.joinToString { it.name }}")
+            }
+            !isBlacklisted
+        } ?: emptyList()
+
+        // If all items are filtered out, try to get the next page
+        if (filteredItems.isEmpty() && hasNextPage()) {
+            return nextPage()
+        }
+
+        return filteredItems
     }
 
 //    fun getContinuationEndpoint(): String? {

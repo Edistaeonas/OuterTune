@@ -638,6 +638,10 @@ object YouTube {
         innerTube.addToPlaylist(WEB_REMIX, playlistId, videoId)
     }
 
+    suspend fun addSongsToPlaylist(playlistId: String, videoIds: List<String>) = runCatching {
+        innerTube.addSongsToPlaylist(WEB_REMIX, playlistId, videoIds)
+    }
+
     suspend fun addPlaylistToPlaylist(playlistId: String, addPlaylistId: String) = runCatching {
         innerTube.addPlaylistToPlaylist(WEB_REMIX, playlistId, addPlaylistId)
     }

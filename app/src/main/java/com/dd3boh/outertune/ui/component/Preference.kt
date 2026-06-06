@@ -203,6 +203,7 @@ fun SwitchPreference(
 fun EditTextPreference(
     modifier: Modifier = Modifier,
     title: @Composable () -> Unit,
+    description: String? = null,
     icon: (@Composable () -> Unit)? = null,
     value: String,
     onValueChange: (String) -> Unit,
@@ -230,7 +231,7 @@ fun EditTextPreference(
     PreferenceEntry(
         modifier = modifier,
         title = title,
-        description = value,
+        description = description ?: value,
         icon = icon,
         onClick = { showDialog = true },
         isEnabled = isEnabled

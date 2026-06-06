@@ -107,6 +107,9 @@ interface ArtistsDao {
     @Query("SELECT * FROM artist WHERE isLocal = 1")
     fun allLocalArtists(): List<ArtistEntity>
 
+    @Query("SELECT * FROM artist WHERE name = :name AND isLocal = 0 AND bookmarkedAt IS NOT NULL LIMIT 1")
+    fun getLikedArtistByName(name: String): ArtistEntity?
+
     @Query("SELECT COUNT(*) FROM artist WHERE isLocal = 1 AND (channelId IS NULL OR channelId = '')")
     fun getUnlinkedLocalArtistCount(): Int
 

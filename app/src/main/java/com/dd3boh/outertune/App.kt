@@ -42,6 +42,7 @@ import com.dd3boh.outertune.constants.ProxyUrlKey
 import com.dd3boh.outertune.constants.SYSTEM_DEFAULT
 import com.dd3boh.outertune.constants.UseLoginForBrowse
 import com.dd3boh.outertune.constants.VisitorDataKey
+import com.dd3boh.outertune.db.MusicDatabase
 import com.dd3boh.outertune.extensions.toEnum
 import com.dd3boh.outertune.extensions.toInetSocketAddress
 import com.dd3boh.outertune.utils.CoilBitmapLoader
@@ -66,10 +67,14 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.net.Proxy
 import java.util.Locale
+import javax.inject.Inject
 
 @HiltAndroidApp
 class App : Application(), SingletonImageLoader.Factory {
     private val TAG = App::class.simpleName.toString()
+
+    @Inject
+    lateinit var database: MusicDatabase
 
     @OptIn(DelicateCoroutinesApi::class)
     override fun onCreate() {
