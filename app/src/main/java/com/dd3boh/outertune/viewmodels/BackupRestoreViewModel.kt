@@ -48,7 +48,7 @@ class BackupRestoreViewModel @Inject constructor(
     val database: MusicDatabase,
 ) : ViewModel() {
     //val TAG = BackupRestoreViewModel::class.simpleName.toString()
-    val TAG = "Edgardebug"
+    val TAG = "BackupRestoreViewModel"
 
     fun backup(uri: Uri, includeLocalInfo: Boolean) {
         runCatching {

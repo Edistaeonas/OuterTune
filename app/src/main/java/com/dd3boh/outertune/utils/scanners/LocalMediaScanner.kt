@@ -343,13 +343,13 @@ class LocalMediaScanner(val context: Context, scannerImpl: ScannerImpl) {
 
                         song.song.album?.let {
                                 scannedAlbum ->
-                            Log.i("Edgardebug", "SYNC: Processing song '${song.song.song.title}' with tag album '${scannedAlbum.title}'")
+                            Log.i(TAG, "SYNC: Processing song '${song.song.song.title}' with tag album '${scannedAlbum.title}'")
                             //   Log potential fuzzy matches for debugging purposes only
                             val dbQuery = database.localAlbumsByNameFuzzy(scannedAlbum.title).sortedBy { it.title.length }
                             val fuzzyMatch = closestAlbumMatch(scannedAlbum.title, dbQuery)
                             if (fuzzyMatch != null) {
                                 val fuzzyArtists = database.getAlbumArtistIds(fuzzyMatch.id)
-                                Log.w("Edgardebug", "SYNC: REJECTED fuzzy match (old flawed logic): Tag says '${scannedAlbum.title}', Fuzzy matched '${fuzzyMatch.title}' by artist IDs $fuzzyArtists. .")
+                                Log.w(TAG, "SYNC: REJECTED fuzzy match (old flawed logic): Tag says '${scannedAlbum.title}', Fuzzy matched '${fuzzyMatch.title}' by artist IDs $fuzzyArtists. .")
                             }
 
 
@@ -364,18 +364,18 @@ class LocalMediaScanner(val context: Context, scannerImpl: ScannerImpl) {
                             }
 
                             if (correctAlbum != null) {
-                                Log.i("Edgardebug", "SYNC: Found EXACT match for album '${scannedAlbum.title}' by artist(s). Merging.")
+                                Log.i(TAG, "SYNC: Found EXACT match for album '${scannedAlbum.title}' by artist(s). Merging.")
                                 albumToDo = Pair(correctAlbum, scannedAlbum)
                             } else {
                                 // No safe match found - create a NEW album entry for this artist
-                                Log.i("Edgardebug", "No artist match found for album '${scannedAlbum.title}'. Creating new album entry.")
+                                Log.i(TAG, "No artist match found for album '${scannedAlbum.title}'. Creating new album entry.")
                                 albumToDo = Pair(null, scannedAlbum)
                             }
                         }
 
                         val finalAlbumId = albumToDo?.first?.id ?: albumToDo?.second?.id
                         val finalAlbumName = albumToDo?.first?.title ?: albumToDo?.second?.title
-                        Log.i("Edgardebug", "SYNC: Song '${song.song.song.title}' -> Database Result: Album ID: $finalAlbumId, Name: $finalAlbumName")
+                        Log.i(TAG, "SYNC: Song '${song.song.song.title}' -> Database Result: Album ID: $finalAlbumId, Name: $finalAlbumName")
 
 
                         update(songToUpdate.copy(

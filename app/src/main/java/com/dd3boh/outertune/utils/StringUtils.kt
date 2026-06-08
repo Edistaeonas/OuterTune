@@ -14,6 +14,8 @@ import java.text.Normalizer
 IMPORTANT: Put any string utils that require composable in outertune/ui/utils/StringUtils.kt
  */
 
+private val TAG = "StringUtils"
+
 // --- NORMALIZATION FUNCTION ---
 internal fun String.normalizeForMatching(): String {
     // 1. Remove accents and convert to lowercase
@@ -211,7 +213,7 @@ object MojibakeFixer {
     private fun looksLikeMojibake(s: String): Boolean {
         val result = mojibakePatterns.any { it.containsMatchIn(s) }
         // We log the input and the detection result
-        //Log.i("Edgardebug", "looksLikeMojibake: '$s' -> detected=$result")
+        Log.d(TAG, "looksLikeMojibake: '$s' -> detected=$result")
         return result
     }
     /**
@@ -265,7 +267,7 @@ object MojibakeFixer {
             .replace("ß", "ss")
 
         if (input != result) {
-            Log.i("Edgardebug", "MojibakeFixer.fix final: '$input' -> '$result'")
+            Log.i(TAG, "MojibakeFixer.fix final: '$input' -> '$result'")
         }
         return result
     }
@@ -367,7 +369,7 @@ fun convertToStartCase(input: String): String {
 
     val converted = result.toString()
     if (input != converted) {
-        Log.d("Edgardebug", "convertToStartCase: '$input' -> '$converted'")
+        Log.d(TAG, "convertToStartCase: '$input' -> '$converted'")
     }
     return converted
 }

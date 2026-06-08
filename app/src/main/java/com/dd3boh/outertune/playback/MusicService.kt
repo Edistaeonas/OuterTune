@@ -642,7 +642,7 @@ class MusicService : MediaLibraryService(),
             }
         }
 //2026.03.09 monitor the downloads
-        Log.i("Edgardebug", "call runDownloadReport in onCreate from MusicService")
+        Log.i(TAG, "call runDownloadReport in onCreate from MusicService")
         runDownloadReport()
 
         scope.launch {
@@ -683,12 +683,12 @@ class MusicService : MediaLibraryService(),
 // 2026.03.09 add this new function to log downloaded songs and call it from the Watchdog or a listener:
     fun runDownloadReport() {
         scope.launch(Dispatchers.IO) {            val downloadedSongs = database.getAllDownloadedSongsDiagnostic()
-            Log.d("Edgardebug", "========== DOWNLOADED YOUTUBE SONGS REPORT ==========")
-            Log.d("Edgardebug", "Total in DB: ${downloadedSongs.size}")
+            Log.d(TAG, "========== DOWNLOADED YOUTUBE SONGS REPORT ==========")
+            Log.d(TAG, "Total in DB: ${downloadedSongs.size}")
             downloadedSongs.forEach { song ->
-                Log.d("Edgardebug", " > [${song.song.id}] ${song.song.title}")
+                Log.d(TAG, " > [${song.song.id}] ${song.song.title}")
             }
-            Log.d("Edgardebug", "======================================================")
+            Log.d(TAG, "======================================================")
         }
     }
 
@@ -701,7 +701,7 @@ class MusicService : MediaLibraryService(),
     ) {
         withContext(Dispatchers.IO) {
             val song = database.song(mediaId).first()
-            Log.i("MusicService", "Starting recoverSong for song = '${song?.song?.title}' by artist: '${song?.artists?.firstOrNull()?.name}'")
+            Log.i(TAG, "Starting recoverSong for song = '${song?.song?.title}' by artist: '${song?.artists?.firstOrNull()?.name}'")
 
             // Update Song Duration (This part is correct and should be kept)
             val duration = song?.song?.duration?.takeIf { it != -1 }

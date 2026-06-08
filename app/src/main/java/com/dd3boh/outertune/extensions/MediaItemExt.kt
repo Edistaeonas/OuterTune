@@ -13,10 +13,13 @@ import com.dd3boh.outertune.models.MediaMetadata
 import com.dd3boh.outertune.models.toMediaMetadata
 import com.dd3boh.outertune.utils.convertToStartCase
 import com.dd3boh.outertune.R
+import com.dd3boh.outertune.utils.scanners.LocalMediaScanner
 import com.zionhuang.innertube.models.SongItem
 
 val MediaItem.metadata: MediaMetadata?
     get() = localConfiguration?.tag as? MediaMetadata
+
+private val TAG = "MediaItemExt"
 
 fun Song.toMediaItem() = MediaItem.Builder()
     .setMediaId(song.id)
@@ -150,7 +153,7 @@ fun MediaMetadata.toMediaItem(
     }
 
     val finalMediaMetadata = mediaMetadataBuilder.build()
-    Log.i("Edgardebug", "PUSHING TO CAR: Title='${finalMediaMetadata.title}', Artist='${finalMediaMetadata.artist}', Album='${finalMediaMetadata.albumTitle}'")
+    Log.i(TAG, "PUSHING TO CAR: Title='${finalMediaMetadata.title}', Artist='${finalMediaMetadata.artist}', Album='${finalMediaMetadata.albumTitle}'")
 
     builder.setMediaMetadata(finalMediaMetadata)
     return builder.build()

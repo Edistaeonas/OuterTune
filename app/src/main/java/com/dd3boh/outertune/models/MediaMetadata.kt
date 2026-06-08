@@ -59,6 +59,7 @@ data class MediaMetadata(
         val isLocal: Boolean = false,
     ) : Serializable
 
+
     fun toSongEntity() = SongEntity(
         id = id,
         title = title,
@@ -126,6 +127,8 @@ data class MediaMetadata(
     }
 }
 
+private val TAG = "MediaMetadata"
+
 fun Song.toMediaMetadata() = MediaMetadata(
     id = song.id,
     title = song.title,
@@ -174,13 +177,13 @@ fun Song.toMediaMetadata() = MediaMetadata(
         )
     } else null,
     genre = if (genre.isNullOrEmpty()) {
-        Log.d("Edgardebug", "genre is missing for song: ${song.title}")
+        Log.d(TAG, "genre is missing for song: ${song.title}")
         listOf(MediaMetadata.Genre(id = null, title = "unknown genre", isLocal = song.isLocal))
     } else {
         val mappedGenres = genre.map {
             MediaMetadata.Genre(id = it.id, title = it.title, isLocal = it.isLocal)
         }
-        Log.d("Edgardebug", "Found genres for song '${song.title}': ${mappedGenres.joinToString { it.title }}")
+        Log.d(TAG, "Found genres for song '${song.title}': ${mappedGenres.joinToString { it.title }}")
         mappedGenres
     },
     year = song.year ?: album?.year,

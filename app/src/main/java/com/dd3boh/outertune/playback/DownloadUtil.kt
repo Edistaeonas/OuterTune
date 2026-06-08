@@ -168,14 +168,14 @@ class DownloadUtil @Inject constructor(
                     // IF REMOVED: Clear the database timestamp so it disappears from the UI immediately
                     if (download.state == Download.STATE_REMOVING || download.state == Download.STATE_FAILED) {
                         CoroutineScope(Dispatchers.IO).launch {
-                            Log.i("Edgardebug", "Download removed/failed for $mediaId. Clearing DB status.")
+                            Log.i(TAG, "Download removed/failed for $mediaId. Clearing DB status.")
                             database.updateDownloadStatus(mediaId, null)
                             (context as? MusicService)?.runDownloadReport()
                         }
                     }
 
                     if (download.state == Download.STATE_COMPLETED) {
-                        Log.i("Edgardebug", "\nDownload.STATE_COMPLETED for  ${mediaId}")
+                        Log.i(TAG, "\nDownload.STATE_COMPLETED for  ${mediaId}")
                         val updateTime = Instant.ofEpochMilli(download.updateTimeMs)
                             .atZone(ZoneOffset.UTC)
                             .toLocalDateTime()
@@ -188,7 +188,7 @@ class DownloadUtil @Inject constructor(
                             val existingSong = database.song(mediaId).firstOrNull()
 
                             if (existingSong == null || existingSong.artists.isEmpty()) {
-                                Log.i("Edgardebug", "Enriching metadata for playlist download: ${mediaId}")
+                                Log.i(TAG, "Enriching metadata for playlist download: ${mediaId}")
 
                                 // 3. Fetch full metadata from YouTube
                                 val result = YTPlayerUtils.playerResponseForMetadata(mediaId)
@@ -212,7 +212,7 @@ class DownloadUtil @Inject constructor(
                                     )
 
                                     database.transaction {
-                                        Log.i("Edgardebug", "start of database.transaction for playlist download: ${mediaId} - ${mediaMetadata.title} - ${mediaMetadata.artists} - ${mediaMetadata.album}")
+                                        Log.i(TAG, "start of database.transaction for playlist download: ${mediaId} - ${mediaMetadata.title} - ${mediaMetadata.artists} - ${mediaMetadata.album}")
                                         // 1. Insert the metadata (Song/Artist/Album)
                                         database.insert(mediaMetadata)
 
@@ -235,17 +235,17 @@ class DownloadUtil @Inject constructor(
                                         // 3. Update download status
                                         // Ensure dateDownload isn't overwritten by the insert
                                         database.updateDownloadStatus(mediaId, updateTime)
-                                        Log.i("Edgardebug", "end of database.transaction for playlist download: ${mediaId}")
+                                        Log.i(TAG, "end of database.transaction for playlist download: ${mediaId}")
                                     }
                                     // 5. Log the report count
-                                    Log.i("Edgardebug", "call runDownloadReport in val downloadManager, DownloadUtil")
+                                    Log.i(TAG, "call runDownloadReport in val downloadManager, DownloadUtil")
                                     (context as? MusicService)?.runDownloadReport()
                                 }.onFailure { e ->
                                     Log.e(TAG, "Failed to enrich metadata for playlist song ${mediaId}", e)
                                 }
                             } else {
                                 // CASE: Song already in DB - just mark it as downloaded
-                                Log.i("Edgardebug", "Marking existing song $mediaId as downloaded.\n")
+                                Log.i(TAG, "Marking existing song $mediaId as downloaded.\n")
                                 database.updateDownloadStatus(mediaId, updateTime)
 
                             }
@@ -273,64 +273,20 @@ class DownloadUtil @Inject constructor(
 
     // Compatibility for single song calls (SongMenu, PlayerMenu)
     fun downloadSingle(song: MediaMetadata) {
-        Log.i("Edgardebug", "\n>>>>>>> in DownloadSingle, called for: ${song.title} - id: ${song.id}")
+        Log.i(TAG, "\n>>>>>>> in DownloadSingle, called for: ${song.title} - id: ${song.id}")
         downloadSong(song.id, song.title, null)
     }
 
-    // 2. NEW UNIQUE FUNCTION: Only for Playlist/Album screens to ensure mapping
-//    fun downloadPlaylist(songs: List<MediaMetadata>, playlist: com.dd3boh.outertune.db.entities.PlaylistEntity) {
-//        Log.i("Edgardebug", "STARTING PLAYLIST MAPPING: ID=${playlist.id}")
-//
-//        CoroutineScope(Dispatchers.IO).launch {
-//            database.transaction {
-//                // ACTIVATION: Force bookmarkedAt so PlaylistsDao.kt filter (line 133) includes it.
-//                // We also set isLocal = true as a fallback for the DAO variant filters.
-//                val activatedPlaylist = playlist.copy(
-//                    bookmarkedAt = java.time.LocalDateTime.now(),
-//                    isLocal = true
-//                )
-//
-//                database.insert(activatedPlaylist)
-//                database.update(activatedPlaylist) // Force update if already in history
-//
-//                songs.forEachIndexed { index, song ->
-//                    // 1. Insert Song placeholder (Matches your Version 20 schema requirements)
-//                    database.insert(com.dd3boh.outertune.db.entities.SongEntity(
-//                        id = song.id,
-//                        title = song.title,
-//                        duration = song.duration,
-//                        thumbnailUrl = song.thumbnailUrl,
-//                        liked = false,
-//                        localPath = null // Placeholder for network cached song
-//                    ))
-//
-//                    // 2. Link song to playlist - Required for the Downloaded tab
-//                    database.insert(com.dd3boh.outertune.db.entities.PlaylistSongMap(
-//                        playlistId = playlist.id,
-//                        songId = song.id,
-//                        position = index
-//                    ))
-//                }
-//            }
-//
-//            Log.i("Edgardebug", "Mapping complete for ${playlist.id}. Starting byte downloads.")
-//
-//            withContext(Dispatchers.Main) {
-//                songs.forEach { song -> downloadSong(song.id, song.title, null) }
-//            }
-//        }
-//    }
-
     // 1. Rename to 'downloadSongs' - used for selections/menus/individual tracks
     fun downloadSongs(songs: List<MediaMetadata>) {
-        Log.i("Edgardebug", "\n>>>>>> in downloadSongs (List) called - Downloading bytes only.")
+        Log.i(TAG, "\n>>>>>> in downloadSongs (List) called - Downloading bytes only.")
         songs.forEach { song -> downloadSong(song.id, song.title, null) }
     }
 
     // 2. The REAL mapping function for Playlists and Albums
 // 2026.03.16 batched mapping + Library Activation
     fun downloadCollection(songs: List<MediaMetadata>, playlist: com.dd3boh.outertune.db.entities.PlaylistEntity) {
-        Log.i("Edgardebug", "\n>>>>>>  in downloadCollection: STARTING COLLECTION MAPPING: ID=${playlist.id}")
+        Log.i(TAG, "\n>>>>>>  in downloadCollection: STARTING COLLECTION MAPPING: ID=${playlist.id}")
 
         CoroutineScope(Dispatchers.IO).launch {
             database.transaction {
@@ -364,7 +320,7 @@ class DownloadUtil @Inject constructor(
                 }
             }
 
-            Log.i("Edgardebug", "Collection mapping complete for ${playlist.id}")
+            Log.i(TAG, "Collection mapping complete for ${playlist.id}")
 
             withContext(Dispatchers.Main) {
                 songs.forEach { song -> downloadSong(song.id, song.title, null) }
@@ -372,107 +328,9 @@ class DownloadUtil @Inject constructor(
         }
     }
 
-    // 2. Main function: Handles mapping and library activation
-    // 2026.03.15 Batched mapping with Version 20 schema compatibility
-//    fun downloadE(songs: List<MediaMetadata>, playlist: com.dd3boh.outertune.db.entities.PlaylistEntity?) {
-//        if (playlist == null) {
-//            Log.i("Edgardebug", "Standard download: No playlist context. Just downloading bytes.")
-//            songs.forEach { song -> downloadSong(song.id, song.title, null) }
-//            return
-//        }
-//
-//        Log.i("Edgardebug", "STARTING BATCH DOWNLOAD: PlaylistID=${playlist.id}")
-//        CoroutineScope(Dispatchers.IO).launch {
-//            database.transaction {
-//                // FIX: Force bookmarkedAt AND isLocal = true.
-//                // This satisfies the WHERE clause in PlaylistsDao.kt (line 133)
-//                val activatedPlaylist = playlist.copy(
-//                    bookmarkedAt = java.time.LocalDateTime.now(),
-//                    isLocal = true
-//                )
-//                database.insert(activatedPlaylist)
-//                database.update(activatedPlaylist)
-//
-//                songs.forEachIndexed { index, song ->
-//                    // 1. Insert Song placeholder (Required for Foreign Key link)
-//                    // Matches DB Version 20: removed totalPlayTime, added localPath=null
-//                    database.insert(com.dd3boh.outertune.db.entities.SongEntity(
-//                        id = song.id,
-//                        title = song.title,
-//                        duration = song.duration,
-//                        thumbnailUrl = song.thumbnailUrl,
-//                        liked = false,
-//                        localPath = null
-//                    ))
-//
-//                    // 2. Link song to playlist
-//                    database.insert(com.dd3boh.outertune.db.entities.PlaylistSongMap(
-//                        playlistId = playlist.id,
-//                        songId = song.id,
-//                        position = index
-//                    ))
-//                }
-//            }
-//
-//            Log.i("Edgardebug", "Database mapping complete for ${playlist.id}")
-//
-//            withContext(Dispatchers.Main) {
-//                songs.forEach { song -> downloadSong(song.id, song.title, null) }
-//            }
-//        }
-//    }
-
-    // 1. Rename to 'downloadIndividualSongs' - used for selections/menus
-//    fun downloadIndividualSongs(songs: List<MediaMetadata>) {
-//        Log.i("Edgardebug", "Individual download called (No playlist mapping)")
-//        songs.forEach { song -> downloadSong(song.id, song.title, null) }
-//    }
-
-    // 2. Rename to 'downloadFullPlaylist' - used ONLY for Playlists and Albums
-    // 2026.03.16 Force mapping + Force Library Activation
-//    fun downloadFullPlaylist(songs: List<MediaMetadata>, playlist: com.dd3boh.outertune.db.entities.PlaylistEntity) {
-//        Log.i("Edgardebug", "STARTING PLAYLIST MAPPING: ID=${playlist.id}")
-//
-//        CoroutineScope(Dispatchers.IO).launch {
-//            database.transaction {
-//                // ACTIVATION: Force bookmarkedAt date.
-//                // PlaylistsDao filter (line 133) hides everything where this is NULL.
-//                val activatedPlaylist = playlist.copy(
-//                    bookmarkedAt = java.time.LocalDateTime.now(),
-//                    isLocal = true
-//                )
-//
-//                database.insert(activatedPlaylist)
-//                database.update(activatedPlaylist) // Forces the date onto search history records
-//
-//                songs.forEachIndexed { index, song ->
-//                    // 1. Insert Song placeholder (matches Version 20 schema)
-//                    database.insert(com.dd3boh.outertune.db.entities.SongEntity(
-//                        id = song.id,
-//                        title = song.title,
-//                        duration = song.duration,
-//                        thumbnailUrl = song.thumbnailUrl,
-//                        liked = false,
-//                        localPath = null
-//                    ))
-//
-//                    // 2. Map song to playlist
-//                    database.insert(com.dd3boh.outertune.db.entities.PlaylistSongMap(
-//                        playlistId = playlist.id,
-//                        songId = song.id,
-//                        position = index
-//                    ))
-//                }
-//            }
-//            Log.i("Edgardebug", "Mapping complete for ${playlist.id}. Starting byte downloads.")
-//            withContext(Dispatchers.Main) {
-//                songs.forEach { song -> downloadSong(song.id, song.title, null) }
-//            }
-//        }
-//    }
 
     private fun downloadSong(id: String, title: String, playlist: com.dd3boh.outertune.db.entities.PlaylistEntity? = null) {
-        Log.i("Edgardebug", "\n>>>>>> in downloadSong (id: $id, title: $title, playlist: $playlist)")
+        Log.i(TAG, "\n>>>>>> in downloadSong (id: $id, title: $title, playlist: $playlist)")
         if (downloads.value[id] != null) return
 
         // 2. URI FIX: The request URI MUST have a valid scheme (https://) for the Downloader to work.
@@ -564,7 +422,7 @@ class DownloadUtil @Inject constructor(
             // 1. Get all songs mapped to this playlist
             val playlistSongs = database.playlistSongs(playlistId).first()
 
-            Log.i("Edgardebug", "Removing downloads for playlist: $playlistId. Song count: ${playlistSongs.size}")
+            Log.i(TAG, "Removing downloads for playlist: $playlistId. Song count: ${playlistSongs.size}")
 
             playlistSongs.forEach { playlistSong ->
                 val songId = playlistSong.song.id
@@ -819,7 +677,7 @@ class DownloadUtil @Inject constructor(
                                 }
                             } else {
                                 // Mark already known songs as downloaded so they show up in tabs
-                                Log.i("Edgardebug", "Marking existing song $mediaId as downloaded")
+                                Log.i(TAG, "Marking existing song $mediaId as downloaded")
                                 database.updateDownloadStatus(mediaId, updateTime)
                             }
                             (context as? MusicService)?.runDownloadReport()

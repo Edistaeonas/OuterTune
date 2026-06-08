@@ -15,7 +15,6 @@ object MediaSessionConstants {
     val CommandToggleLibrary = SessionCommand(ACTION_TOGGLE_LIBRARY, Bundle.EMPTY)
     val CommandToggleLike = SessionCommand(ACTION_TOGGLE_LIKE, Bundle.EMPTY)
     val CommandToggleStartRadio = SessionCommand(ACTION_TOGGLE_START_RADIO, Bundle.EMPTY)
-//edgar    val CommandToggleStartGlobalRadio = SessionCommand(ACTION_TOGGLE_START_GLOBAL_RADIO, Bundle.EMPTY)
     val CommandStartGlobalArtistRadio = SessionCommand(ACTION_START_GLOBAL_ARTIST_RADIO, Bundle.EMPTY)
     val CommandToggleShuffle = SessionCommand(ACTION_TOGGLE_SHUFFLE, Bundle.EMPTY)
     val CommandToggleRepeatMode = SessionCommand(ACTION_TOGGLE_REPEAT_MODE, Bundle.EMPTY)

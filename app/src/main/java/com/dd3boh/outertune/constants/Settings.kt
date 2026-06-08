@@ -31,7 +31,7 @@ enum class LyricsPosition {
 
 //const val DEFAULT_ENABLED_TABS = "HSFM"
 //const val DEFAULT_ENABLED_FILTERS = "ARP"
-// [Edgar]. I want all options by default. Tired of re-adding them at each install...
+//        I want all options by default. Tired of re-adding them at each install...
 //val screenPairs = listOf(
 //    Home to 'H',
 //    Songs to 'S',
