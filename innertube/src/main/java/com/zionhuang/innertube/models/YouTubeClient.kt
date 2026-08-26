@@ -2,20 +2,41 @@ package com.zionhuang.innertube.models
 
 import kotlinx.serialization.Serializable
 
+//@Serializable
+//data class YouTubeClient(
+//    val clientName: String,
+//    val clientVersion: String,
+//    val clientId: String,
+//    val userAgent: String,
+//    val osName: String? = null,      // NEW
+//    val osVersion: String? = null,
+//    val androidSdkVersion: Int? = null, // NEW
+//    val loginSupported: Boolean = false,
+//    val loginRequired: Boolean = false,
+//    val useSignatureTimestamp: Boolean = false,
+//    val useWebPoTokens: Boolean = false,
+//    val isEmbedded: Boolean = false,
+//    // val origin: String? = null,
+//    // val referer: String? = null,
+//)
 @Serializable
 data class YouTubeClient(
     val clientName: String,
     val clientVersion: String,
     val clientId: String,
     val userAgent: String,
-    val osName: String? = null,      // NEW
+    val osName: String? = null,
     val osVersion: String? = null,
-    val androidSdkVersion: Int? = null, // NEW
+    val deviceMake: String? = null,
+    val deviceModel: String? = null,
+    val androidSdkVersion: String? = null,
     val loginSupported: Boolean = false,
     val loginRequired: Boolean = false,
     val useSignatureTimestamp: Boolean = false,
     val useWebPoTokens: Boolean = false,
     val isEmbedded: Boolean = false,
+    /** Whether the context should also name the user agent, as the real device clients do. */
+    val includeUserAgentInContext: Boolean = false,
     // val origin: String? = null,
     // val referer: String? = null,
 ) {
@@ -34,7 +55,8 @@ data class YouTubeClient(
             // If it's MWEB, pretend we are on iOS to match the User-Agent above
             osName = if (clientName == "MWEB") "iOS" else (osName ?: "Android"),
             osVersion = if (clientName == "MWEB") "12.4" else (osVersion ?: deviceOsVersion),
-            androidSdkVersion = androidSdkVersion ?: deviceSdkVersion,
+            //androidSdkVersion = androidSdkVersion ?: deviceSdkVersion,
+            androidSdkVersion = androidSdkVersion,
             model = deviceModel,
             gl = locale.gl,
             hl = locale.hl,
@@ -116,6 +138,62 @@ data class YouTubeClient(
 
         val ANDROID_VR_NO_AUTH get() = ANDROID_VR.copy(loginSupported = false)
 
+        /**
+         * The YouTube client for Apple's Vision Pro. It hands back plain urls that need neither
+         * signature deobfuscation, nor an n-transform, nor a PO token, and those urls serve a whole
+         * track instead of being cut off after about a minute. Measured against Metrolist, which
+         * reaches for this one first.
+         */
+        val VISIONOS = YouTubeClient(
+            clientName = "VISIONOS",
+            clientVersion = "0.1",
+            clientId = "101",
+            userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+            osName = "visionOS",
+            osVersion = "1.3.21O771",
+            deviceMake = "Apple",
+            deviceModel = "RealityDevice14,1",
+            loginSupported = false,
+            useSignatureTimestamp = false,
+        )
+
+        /**
+         * Newer Oculus build of the same client. YouTube treats each ANDROID_VR version differently,
+         * so keeping a second one gives the chain somewhere to go when [ANDROID_VR_NO_AUTH] is
+         * turned away instead of losing the client entirely.
+         */
+        val ANDROID_VR_1_65_10 = YouTubeClient(
+            clientName = "ANDROID_VR",
+            clientVersion = "1.65.10",
+            clientId = "28",
+            userAgent = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
+            osName = "Android",
+            osVersion = "12L",
+            deviceMake = "Oculus",
+            deviceModel = "Quest 3",
+            androidSdkVersion = "32",
+            loginSupported = false,
+            useSignatureTimestamp = false,
+            includeUserAgentInContext = true,
+        )
+
+        /**
+         * Uses non adaptive bitrate, which fixes audio stuttering with YT Music.
+         */
+        val ANDROID_VR_1_43_32 = YouTubeClient(
+            clientName = "ANDROID_VR",
+            clientVersion = "1.43.32",
+            clientId = "28",
+            userAgent = "com.google.android.apps.youtube.vr.oculus/1.43.32 (Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1; Cronet/107.0.5284.2)",
+            osName = "Android",
+            osVersion = "12",
+            deviceMake = "Oculus",
+            deviceModel = "Quest 3",
+            androidSdkVersion = "32",
+            loginSupported = false,
+            useSignatureTimestamp = false,
+            includeUserAgentInContext = true,
+        )
 
 
         // used for Lyrics: WEB
@@ -140,19 +218,19 @@ data class YouTubeClient(
             useSignatureTimestamp = true
         )
 
-        val ANDROID_MUSIC = YouTubeClient(
-            clientName = "ANDROID_MUSIC", // Version used by the official YouTube Music app.
-            //clientVersion = "9.08.51",
-            clientVersion = "6.44.54", // A specific "evergreen" version that is high-trust
-            clientId = "16",
-            userAgent = "com.google.android.apps.youtube.music/6.44.54 (Linux; U; Android 12; en_US) gzip",
-            osName = "Android",
-            osVersion = "13",
-            androidSdkVersion = 33,
-            loginSupported = true,
-            useSignatureTimestamp = true, // Official app ALWAYS uses STS
-            useWebPoTokens = false
-        )
+//        val ANDROID_MUSIC = YouTubeClient(
+//            clientName = "ANDROID_MUSIC", // Version used by the official YouTube Music app.
+//            //clientVersion = "9.08.51",
+//            clientVersion = "6.44.54", // A specific "evergreen" version that is high-trust
+//            clientId = "16",
+//            userAgent = "com.google.android.apps.youtube.music/6.44.54 (Linux; U; Android 12; en_US) gzip",
+//            osName = "Android",
+//            osVersion = "13",
+//            androidSdkVersion = 33,
+//            loginSupported = true,
+//            useSignatureTimestamp = true, // Official app ALWAYS uses STS
+//            useWebPoTokens = false
+//        )
 
         val ANDROID_CREATOR = YouTubeClient(
             clientName = "ANDROID_CREATOR",

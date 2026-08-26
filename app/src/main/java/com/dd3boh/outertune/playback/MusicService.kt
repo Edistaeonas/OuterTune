@@ -1490,7 +1490,7 @@ class MusicService : MediaLibraryService(),
                         songUrlCache[mediaId] = streamUrl to System.currentTimeMillis() + (playbackData.streamExpiresInSeconds * 1000L)
                         offloadScope.launch { recoverSong(mediaId, playbackData) }
 
-                        val headers = YTPlayerUtils.getPlaybackHeaders(playbackData.userAgent, playbackData.visitorData)
+                        val headers = playbackData.streamHeaders
 
                         androidx.media3.datasource.DataSpec.Builder()
                             .setUri(streamUrl.toUri())
@@ -2775,7 +2775,7 @@ class MusicService : MediaLibraryService(),
                         val streamUrl = playbackData.streamUrl
                         if (streamUrl.isBlank()) continue
 
-                        val headers = YTPlayerUtils.getPlaybackHeaders(playbackData.userAgent, playbackData.visitorData)
+                        val headers = playbackData.streamHeaders
                         val dataSpec = androidx.media3.datasource.DataSpec.Builder()
                             .setUri(streamUrl.toUri())
                             .setKey(item.id)

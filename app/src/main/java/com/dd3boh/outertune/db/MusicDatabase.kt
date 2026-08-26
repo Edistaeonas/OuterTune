@@ -130,10 +130,10 @@ class MusicDatabase(
         AutoMigration(from = 17, to = 18, spec = Migration17To18::class), // Fix Room nonsense
         AutoMigration(from = 18, to = 19), // Recent activity
         AutoMigration(from = 19, to = 20, spec = Migration19To20::class), // Db optimization, remove totalplaytime, local media fields
-        AutoMigration(from = 20, to = 21, spec = Migration20To21::class), // 29.03.2026
-        AutoMigration(from = 21, to = 22), // 03.04.2026
-        AutoMigration(from = 22, to = 23),
-        AutoMigration(from = 23, to = 24)
+        //AutoMigration(from = 20, to = 21, spec = Migration20To21::class), // 29.03.2026
+        //AutoMigration(from = 21, to = 22), // 03.04.2026
+        //AutoMigration(from = 22, to = 23),
+        //AutoMigration(from = 23, to = 24)
     ]
 )
 @TypeConverters(Converters::class)
@@ -151,7 +151,10 @@ abstract class InternalDatabase : RoomDatabase() {
                     .addMigrations(MIGRATION_14_15)
                     .addMigrations(MIGRATION_15_16)
                     .addMigrations(MIGRATION_16_17)
+                    .addMigrations(MIGRATION_20_21)
                     .addMigrations(MIGRATION_21_22)
+                    .addMigrations(MIGRATION_22_23)
+                    .addMigrations(MIGRATION_23_24)
                     .build()
             )
 
@@ -500,6 +503,11 @@ val MIGRATION_16_17 = object : Migration(16, 17) {
     }
 }
 
+val MIGRATION_20_21 = object : Migration(20, 21) {
+    override fun migrate(db: SupportSQLiteDatabase) { }
+}
+
+
 /**
  * Manual migration to force the addition of commentTag and composer columns,
  * resolving the AutoMigration sync issue.
@@ -512,6 +520,21 @@ val MIGRATION_21_22 = object : Migration(21, 22) {
         db.execSQL("ALTER TABLE song ADD COLUMN composer TEXT DEFAULT NULL")
     }
 }
+
+val MIGRATION_22_23 = object : Migration(22, 23) {
+    override fun migrate(db: SupportSQLiteDatabase) { }
+}
+val MIGRATION_23_24 = object : Migration(23, 24) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE song ADD COLUMN albumArtist TEXT")
+        db.execSQL("ALTER TABLE song ADD COLUMN commentTag TEXT")
+        db.execSQL("ALTER TABLE song ADD COLUMN composer TEXT")
+        // parentArtist removal cannot be done with simple ALTER TABLE DROP COLUMN
+        // If you must remove it physically, do table-rebuild migration.
+        // Otherwise keep it (Room usually tolerates extra columns in existing DB).
+    }
+}
+
 
 @DeleteColumn.Entries(
     DeleteColumn(tableName = "song", columnName = "isTrash"),
