@@ -2738,13 +2738,15 @@ class MusicService : MediaLibraryService(),
 
         val upcomingItems = try {
             currentQueue.getCurrentQueueShuffled()
-                .drop(currentIndex)
+                .drop(currentIndex + 1)
                 .filter { !it.isLocal && it.id.isNotBlank() }
-                .take(5) // 5 songs to cache
+                .distinctBy { it.id }
+                .take(5) // keep low-overhead: next 5 upcoming tracks
         } catch (e: Exception) { emptyList() }
 
         if (upcomingItems.isEmpty()) return
 
+        // Run in background and avoid overlapping prefetch bursts.
         preCacheJob?.cancel()
         preCacheJob = scope.launch(Dispatchers.IO) {
             preCacheLock.withLock {
@@ -2753,7 +2755,7 @@ class MusicService : MediaLibraryService(),
                     return@withLock
                 }
 
-                Log.i(TAG, "PRE-CACHE: Starting background task for ${upcomingItems.size} items.")
+                Log.i(TAG, "PRE-CACHE: Queue prefetch started for ${upcomingItems.size} upcoming tracks.")
 
                 for (item in upcomingItems) {
                     if (!isActive || !isNetworkConnected.value) {
@@ -2763,8 +2765,10 @@ class MusicService : MediaLibraryService(),
 
                     try {
                         val metadata = playerCache.getContentMetadata(item.id)
-                        val length = metadata.get(androidx.media3.datasource.cache.ContentMetadata.KEY_CONTENT_LENGTH, C.LENGTH_UNSET.toLong())
-
+                        val length = metadata.get(
+                            androidx.media3.datasource.cache.ContentMetadata.KEY_CONTENT_LENGTH,
+                            C.LENGTH_UNSET.toLong()
+                        )
                         val isFullyCached = length != C.LENGTH_UNSET.toLong() && playerCache.isCached(item.id, 0L, length)
 
                         if (isFullyCached) {
@@ -2772,49 +2776,17 @@ class MusicService : MediaLibraryService(),
                             continue
                         }
 
-                        Log.i(TAG, "PRE-CACHE: Resolving/Resuming '${item.title}'.........................")
+                        // Use the existing Media3 DownloadService pipeline so requests are de-duplicated
+                        // with normal downloads and persist safely across service lifecycle.
+                        Log.i(TAG, "PRE-CACHE: Enqueueing '${item.title}' via DownloadService.")
+                        downloadUtil.downloadSingle(item)
 
-                        val audioQuality = dataStore[AudioQualityKey]?.let { AudioQuality.valueOf(it) }
-                            ?: AudioQuality.AUTO
-
-                        val playbackData = YTPlayerUtils.playerResponseForPlayback(
-                            videoId = item.id,
-                            audioQuality = audioQuality,
-                            connectivityManager = connectivityManager
-                        ).getOrNull() ?: continue
-
-                        val streamUrl = playbackData.streamUrl
-                        if (streamUrl.isBlank()) continue
-
-                        val headers = playbackData.streamHeaders
-                        val dataSpec = androidx.media3.datasource.DataSpec.Builder()
-                            .setUri(streamUrl.toUri())
-                            .setKey(item.id)
-                            .setHttpRequestHeaders(headers)
-                            .setFlags(androidx.media3.datasource.DataSpec.FLAG_ALLOW_CACHE_FRAGMENTATION)
-                            .build()
-
-                        val upstreamFactory = DefaultDataSource.Factory(
-                            this@MusicService,
-                            OkHttpDataSource.Factory(YTPlayerUtils.httpClient)
-                        )
-
-                        val cacheWriter = androidx.media3.datasource.cache.CacheWriter(
-                            CacheDataSource(playerCache, upstreamFactory.createDataSource()),
-                            dataSpec, null, null
-                        )
-
-                        Log.i(TAG, "PRE-CACHE: Downloading '${item.title}'...........................................................")
-                        withTimeoutOrNull(60000) { cacheWriter.cache() }
-                        Log.i(TAG, "PRE-CACHE: Success for '${item.title}'===========================================================")
-
-                        delay(1000)
-
+                        // Light pacing to keep I/O/network pressure low.
+                        delay(400)
                     } catch (e: Exception) {
-                        Log.e(TAG, "PRE-CACHE: Task failed for '${item.title}': ${e.message}")
-                        // If network error, wait 5s then CONTINUE to next track
+                        Log.e(TAG, "PRE-CACHE: Failed for '${item.title}': ${e.message}")
                         if (e is java.net.SocketException || e is java.io.IOException) {
-                            delay(5000)
+                            delay(1500)
                         }
                     }
                 }
