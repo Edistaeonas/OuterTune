@@ -43,7 +43,10 @@ import com.dd3boh.outertune.constants.AccountEmailKey
 import com.dd3boh.outertune.constants.AccountNameKey
 import com.dd3boh.outertune.constants.DataSyncIdKey
 import com.dd3boh.outertune.constants.InnerTubeCookieKey
+import com.dd3boh.outertune.constants.ENABLE_LOGIN_YT_SESSION_RESET
 import com.dd3boh.outertune.constants.OobeStatusKey
+import com.dd3boh.outertune.constants.SHOW_YT_EXPERT_CLIENT_VERSION_UI
+import com.dd3boh.outertune.constants.SHOW_YT_SESSION_RESET_UI
 import com.dd3boh.outertune.constants.UseLoginForBrowse
 import com.dd3boh.outertune.constants.VisitorDataKey
 import com.dd3boh.outertune.constants.VrVerKey
@@ -149,7 +152,7 @@ fun ColumnScope.AccountFrag(navController: NavController) {
                 onVrVerChange(VR_CLIENT_LATEST_VERSION)
 
                 // If the app has already done an anonymous handshake, we MUST restart to clean sockets
-                if (YouTube.visitorData != null) {
+                if (ENABLE_LOGIN_YT_SESSION_RESET && YouTube.visitorData != null) {
                     showRestartRequiredByVersionChange = true
                 } else {
                     // Extremely rare case: login happened so fast no handshake occurred.
@@ -183,7 +186,7 @@ fun ColumnScope.AccountFrag(navController: NavController) {
         Spacer(Modifier.height(24.dp))
     }
 
-    if (oobeStatus >= 3) {
+    if (SHOW_YT_SESSION_RESET_UI && oobeStatus >= 3) {
         PreferenceEntry(
             title = {
                 // Main Title
@@ -211,51 +214,53 @@ fun ColumnScope.AccountFrag(navController: NavController) {
     }
 
 
-    // --- EXPERT SETTINGS SECTION ---
-    Spacer(Modifier.height(16.dp))
-    Text(
-        text = stringResource(R.string.expert_settings_title),
-        fontSize = 16.sp,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(horizontal = 16.dp)
-    )
-    Text(
-        text = stringResource(R.string.expert_settings_desc),
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
-        fontWeight = FontWeight.Light,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-    )
-    Spacer(Modifier.height(8.dp))
+    if (SHOW_YT_EXPERT_CLIENT_VERSION_UI) {
+        // --- EXPERT SETTINGS SECTION ---
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = stringResource(R.string.expert_settings_title),
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
+        Text(
+            text = stringResource(R.string.expert_settings_desc),
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            fontWeight = FontWeight.Light,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+        )
+        Spacer(Modifier.height(8.dp))
 
-    // 5. Corrected UI Entries using PreferenceEntry
-    PreferenceEntry(
-        title = { Text(stringResource(R.string.vr_version_title)) },
-        description = stringResource(R.string.client_version_desc, vrVer, stringResource(R.string.client_vr_label)),
-        icon = { Icon(Icons.Rounded.SettingsInputAntenna, null) },
-        onClick = { showVrDialog = true }
-    )
+        // 5. Corrected UI Entries using PreferenceEntry
+        PreferenceEntry(
+            title = { Text(stringResource(R.string.vr_version_title)) },
+            description = stringResource(R.string.client_version_desc, vrVer, stringResource(R.string.client_vr_label)),
+            icon = { Icon(Icons.Rounded.SettingsInputAntenna, null) },
+            onClick = { showVrDialog = true }
+        )
 
-    PreferenceEntry(
-        title = { Text(stringResource(R.string.web_version_title)) },
-        description = stringResource(R.string.client_version_desc, webVer, stringResource(R.string.client_web_label)),
-        icon = { Icon(Icons.Rounded.Web, null) },
-        onClick = { showWebDialog = true }
-    )
+        PreferenceEntry(
+            title = { Text(stringResource(R.string.web_version_title)) },
+            description = stringResource(R.string.client_version_desc, webVer, stringResource(R.string.client_web_label)),
+            icon = { Icon(Icons.Rounded.Web, null) },
+            onClick = { showWebDialog = true }
+        )
 
-    PreferenceEntry(
-        title = { Text(stringResource(R.string.android_version_title)) },
-        description = stringResource(R.string.client_version_desc, androidVer, stringResource(R.string.client_fallback_label)),
-        icon = { Icon(Icons.Rounded.Android, null) },
-        onClick = { showAndroidDialog = true }
-    )
+        PreferenceEntry(
+            title = { Text(stringResource(R.string.android_version_title)) },
+            description = stringResource(R.string.client_version_desc, androidVer, stringResource(R.string.client_fallback_label)),
+            icon = { Icon(Icons.Rounded.Android, null) },
+            onClick = { showAndroidDialog = true }
+        )
 
-    PreferenceEntry(
-        title = { Text(stringResource(R.string.ios_version_title)) },
-        description = stringResource(R.string.client_version_desc, iosVer, stringResource(R.string.client_fallback_label)),
-        icon = { Icon(Icons.Rounded.PhoneIphone, null) },
-        onClick = { showIosDialog = true }
-    )
+        PreferenceEntry(
+            title = { Text(stringResource(R.string.ios_version_title)) },
+            description = stringResource(R.string.client_version_desc, iosVer, stringResource(R.string.client_fallback_label)),
+            icon = { Icon(Icons.Rounded.PhoneIphone, null) },
+            onClick = { showIosDialog = true }
+        )
+    }
 
 
 

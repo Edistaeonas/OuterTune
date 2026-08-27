@@ -31,7 +31,7 @@ android {
         minSdk = 24
         targetSdk = 36
         versionCode = 73
-        versionName = "0.14.1"
+        versionName = "0.15.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         externalNativeBuild {
             cmake {

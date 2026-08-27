@@ -71,6 +71,7 @@ import com.dd3boh.outertune.constants.AudioOffloadKey
 import com.dd3boh.outertune.constants.AudioQuality
 import com.dd3boh.outertune.constants.AudioQualityKey
 import com.dd3boh.outertune.constants.AutoLoadMoreKey
+import com.dd3boh.outertune.constants.ENABLE_AUTO_YT_SESSION_RESET
 import com.dd3boh.outertune.constants.ENABLE_FFMETADATAEX
 import com.dd3boh.outertune.constants.GlobalRadioArtistsCountKey
 import com.dd3boh.outertune.constants.GlobalRadioLocalAndLikedSongsCountKey
@@ -441,9 +442,11 @@ class MusicService : MediaLibraryService(),
                             // --- NEW: Check if the hang is a "Fake" network issue ---
                             val internetIsBack = isInternetActuallyAvailable()
                             if (internetIsBack) {
-                                Log.e(TAG, "WATCHDOG: Internet is UP but resolution is hanging. Forcing session reset.")
-                                forceYoutubeReset(rotate = true, clearCookies = false, autoPlay = true)
-                                return@launch
+                                if (ENABLE_AUTO_YT_SESSION_RESET) {
+                                    Log.e(TAG, "WATCHDOG: Internet is UP but resolution is hanging. Forcing session reset.")
+                                    forceYoutubeReset(rotate = true, clearCookies = false, autoPlay = true)
+                                    return@launch
+                                }
                             } else {
                                 Log.e(TAG, "WATCHDOG: Truly offline. Skipping to local media.")
                                 withContext(Dispatchers.Main) {
@@ -459,8 +462,10 @@ class MusicService : MediaLibraryService(),
                                 continue
                             }
                         } else {
-                            Log.e(TAG, "WATCHDOG: Recovery failed twice. Triggering Nuclear Reset.")
-                            forceYoutubeReset(rotate = true, clearCookies = false, autoPlay = true)
+                            if (ENABLE_AUTO_YT_SESSION_RESET) {
+                                Log.e(TAG, "WATCHDOG: Recovery failed twice. Triggering Nuclear Reset.")
+                                forceYoutubeReset(rotate = true, clearCookies = false, autoPlay = true)
+                            }
                         }
                     } else {
                         Log.w(TAG, "WATCHDOG: Attempting flush and retry.")
@@ -1066,8 +1071,10 @@ class MusicService : MediaLibraryService(),
                 androidx.datastore.preferences.core.longPreferencesKey(LAST_ACTIVE_TIME_KEY), 0L)
         }
         if (lastActive != 0L && (System.currentTimeMillis() - lastActive) > IDLE_RESET_THRESHOLD_MS) {
-            Log.w(TAG, "IDLE WATCHDOG: App was silent for hours. Resetting session before playback.!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            forceYoutubeReset(rotate = false, clearCookies = false, autoPlay = false)
+            if (ENABLE_AUTO_YT_SESSION_RESET) {
+                Log.w(TAG, "IDLE WATCHDOG: App was silent for hours. Resetting session before playback.!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                forceYoutubeReset(rotate = false, clearCookies = false, autoPlay = false)
+            }
             // Update the timestamp so we don't reset again immediately
             scope.launch {
                 dataStore.edit {
@@ -2023,8 +2030,10 @@ class MusicService : MediaLibraryService(),
                         // We must reset the app to heal the session and resume playback.
                         withContext(Dispatchers.Main) {
                             //  Ensure reset happens on the Main thread to avoid IllegalStateException
-                            Log.i(TAG, "GLOBAL RADIO: Network failure detected, but Internet is WORKING (HTTP Success)! Forcing reset.")
-                            forceYoutubeReset(rotate = true, clearCookies = false, autoPlay = true)
+                            if (ENABLE_AUTO_YT_SESSION_RESET) {
+                                Log.i(TAG, "GLOBAL RADIO: Network failure detected, but Internet is WORKING (HTTP Success)! Forcing reset.")
+                                forceYoutubeReset(rotate = true, clearCookies = false, autoPlay = true)
+                            }
                         }
                     } else if (elapsed < 20000 && networkRetryCount < 2) {
                         networkRetryCount++
@@ -2102,8 +2111,10 @@ class MusicService : MediaLibraryService(),
                     withContext(Dispatchers.Main) {
                         //  Ensure reset happens on the Main thread
                         if (internetIsBack) {
-                            Log.i(TAG,"GLOBAL RADIO: Resolution failed but Internet is UP. Forcing session reset.")
-                            forceYoutubeReset(rotate = true, clearCookies = false, autoPlay = true)
+                            if (ENABLE_AUTO_YT_SESSION_RESET) {
+                                Log.i(TAG,"GLOBAL RADIO: Resolution failed but Internet is UP. Forcing session reset.")
+                                forceYoutubeReset(rotate = true, clearCookies = false, autoPlay = true)
+                            }
                         } else {
                             Log.i(TAG, "GLOBAL RADIO: Truly offline. Skipping track.")
                             player.seekToNextMediaItem()

@@ -118,6 +118,7 @@ import coil3.request.allowHardware
 import coil3.toBitmap
 import com.dd3boh.outertune.constants.AppBarHeight
 import com.dd3boh.outertune.constants.DEFAULT_ENABLED_TABS
+import com.dd3boh.outertune.constants.ENABLE_LOGIN_YT_SESSION_RESET
 import com.dd3boh.outertune.constants.DarkMode
 import com.dd3boh.outertune.constants.DarkModeKey
 import com.dd3boh.outertune.constants.DefaultOpenTabKey
@@ -344,11 +345,17 @@ class MainActivity : ComponentActivity() {
                             YouTubeClient.currentVrVersion = YouTubeClient.VR_CLIENT_LATEST_VERSION
                         } else {
                             // CASE: SETTINGS LOGIN (Spoiled)
-                            // User is already using the app. We MUST perform the full Reset (Socket Wipe + Restart).
-                            // Standard case: Show dialog first!
-                            // This delay allows the account sync to finish.
-                            Log.w(MAIN_TAG, "LOGIN_TRIGGER: Standard login. Sockets may be spoiled. Triggering Reset.")
-                            showLoginRestartDialog = true
+                            // User is already using the app. Only trigger reset flow when explicitly enabled.
+                            if (ENABLE_LOGIN_YT_SESSION_RESET) {
+                                // Standard case: Show dialog first!
+                                // This delay allows the account sync to finish.
+                                Log.w(MAIN_TAG, "LOGIN_TRIGGER: Standard login. Sockets may be spoiled. Triggering Reset.")
+                                showLoginRestartDialog = true
+                            } else {
+                                Log.i(MAIN_TAG, "LOGIN_TRIGGER: Login reset flow disabled by feature flag.")
+                                onVrVerChange(YouTubeClient.VR_CLIENT_LATEST_VERSION)
+                                YouTubeClient.currentVrVersion = YouTubeClient.VR_CLIENT_LATEST_VERSION
+                            }
                         }
                     }
                     lastCookieState = cookie

@@ -8,6 +8,10 @@ import com.dd3boh.outertune.BuildConfig
  */
 
 const val ENABLE_FFMETADATAEX = BuildConfig.FLAVOR == "full"
+const val ENABLE_AUTO_YT_SESSION_RESET = false
+const val SHOW_YT_SESSION_RESET_UI = false
+const val SHOW_YT_EXPERT_CLIENT_VERSION_UI = false
+const val ENABLE_LOGIN_YT_SESSION_RESET = false
 
 
 /**
