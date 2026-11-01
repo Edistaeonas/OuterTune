@@ -17,6 +17,7 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -127,6 +128,7 @@ import com.dd3boh.outertune.constants.EnabledTabsKey
 import com.dd3boh.outertune.constants.HighContrastKey
 import com.dd3boh.outertune.constants.InnerTubeCookieKey
 import com.dd3boh.outertune.constants.LibraryFilterKey
+import com.dd3boh.outertune.constants.KeepScreenOnDuringPlaybackKey
 import com.dd3boh.outertune.constants.MinMiniPlayerHeight
 import com.dd3boh.outertune.constants.MiniPlayerHeight
 import com.dd3boh.outertune.constants.NavigationBarAnimationSpec
@@ -308,6 +310,10 @@ class MainActivity : ComponentActivity() {
 
 
                 val (oobeStatus) = rememberPreference(OobeStatusKey, defaultValue = 0)
+                val (keepScreenOnDuringPlayback) = rememberPreference(
+                    KeepScreenOnDuringPlaybackKey,
+                    defaultValue = false
+                )
 
                 var filter by rememberEnumPreference(LibraryFilterKey, Screens.LibraryFilter.ALL)
                 val (slimNav) = rememberPreference(SlimNavBarKey, defaultValue = false)
@@ -395,6 +401,18 @@ class MainActivity : ComponentActivity() {
 
                 LaunchedEffect(useDarkTheme) {
                     setSystemBarAppearance(useDarkTheme)
+                }
+
+                val isPlaying by (playerConnection?.isPlaying ?: kotlinx.coroutines.flow.flowOf(false))
+                    .collectAsState(initial = false)
+
+                LaunchedEffect(keepScreenOnDuringPlayback, isPlaying) {
+                    if (keepScreenOnDuringPlayback && isPlaying) {
+                        // native Android API way of preventing the screen saver:
+                        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    } else {
+                        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    }
                 }
                 var themeColor by rememberSaveable(stateSaver = ColorSaver) {
                     mutableStateOf(DefaultThemeColor)

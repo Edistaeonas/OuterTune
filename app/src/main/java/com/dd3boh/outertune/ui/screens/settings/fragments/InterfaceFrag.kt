@@ -49,6 +49,7 @@ import com.dd3boh.outertune.constants.DEFAULT_ENABLED_FILTERS
 import com.dd3boh.outertune.constants.DEFAULT_ENABLED_TABS
 import com.dd3boh.outertune.constants.DefaultOpenTabKey
 import com.dd3boh.outertune.constants.EnabledFiltersKey
+import com.dd3boh.outertune.constants.KeepScreenOnDuringPlaybackKey
 import com.dd3boh.outertune.constants.EnabledTabsKey
 import com.dd3boh.outertune.constants.LanguageCodeToName
 import com.dd3boh.outertune.constants.ListItemHeight
@@ -396,6 +397,8 @@ fun ColumnScope.SwipeGesturesFrag() {
     val (swipeToSkip, onSwipeToSkipChange) = rememberPreference(SwipeToSkipKey, defaultValue = false)
     val (swipe2Queue, onSwipe2QueueChange) = rememberPreference(SwipeToQueueKey, defaultValue = false)
     val (swipeToRemove, onSwipeToRemoveChange) = rememberPreference(SwipeToRemoveKey, defaultValue = false)
+    val (keepScreenOnDuringPlayback, onKeepScreenOnDuringPlaybackChange) =
+        rememberPreference(KeepScreenOnDuringPlaybackKey, defaultValue = false)
 
     SwitchPreference(
         title = { Text(stringResource(R.string.swipe2Queue)) },
@@ -417,6 +420,12 @@ fun ColumnScope.SwipeGesturesFrag() {
         icon = { Icon(Icons.Rounded.Swipe, null) },
         checked = swipeToSkip,
         onCheckedChange = onSwipeToSkipChange
+    )
+    SwitchPreference(
+        title = { Text(stringResource(R.string.keep_screen_on_during_playback)) },
+        description = stringResource(R.string.keep_screen_on_during_playback_description),
+        checked = keepScreenOnDuringPlayback,
+        onCheckedChange = onKeepScreenOnDuringPlaybackChange
     )
 }
 

@@ -283,6 +283,8 @@ We recycle translations from upstream, they are pulled periodically. -->
     <string name="audio_normalization">Audio normalization</string>
     <string name="auto_skip_next_on_error">Auto skip to next song when error occurs</string>
     <string name="auto_skip_next_on_error_desc">Ensure your continuous playback experience</string>
+    <string name="keep_screen_on_during_playback">Keep screen on during playback</string>
+    <string name="keep_screen_on_during_playback_description">Prevents the screen from turning off while music is playing. This may increase battery usage.</string>
     <string name="stop_music_on_task_clear">Stop music on task clear</string>
     <string name="equalizer">Equalizer</string>
 
