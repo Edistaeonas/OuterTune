@@ -48,4 +48,20 @@ allprojects {
             languageVersion.set(JavaLanguageVersion.of(21))
         }
     }
+
+    // We include Media3 source build for library substitution only.
+    // Its demo apps are not needed by OuterTune and can fail on package tasks
+    // (e.g. IncrementalSplitterRunnable) with modern AGP.
+    if (path.startsWith(":media:demos:") || path == ":media:demo-shortform") {
+        tasks.configureEach {
+            if (
+                name.startsWith("package", ignoreCase = true) ||
+                name.startsWith("assemble", ignoreCase = true) ||
+                name.startsWith("bundle", ignoreCase = true) ||
+                name.startsWith("install", ignoreCase = true)
+            ) {
+                enabled = false
+            }
+        }
+    }
 }
